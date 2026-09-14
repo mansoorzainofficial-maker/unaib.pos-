@@ -1,0 +1,3 @@
+@echo off
+echo Starting Unaib Computer Accessories POS in Development Mode...
+npm run dev

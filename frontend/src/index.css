@@ -1,0 +1,212 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==========================================================
+   Local Farsi & Nastaliq Font Face Definitions (Offline Ready)
+   ========================================================== */
+@font-face {
+  font-family: 'Noto Nastaliq Urdu';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/NotoNastaliqUrdu-Regular.ttf') format('truetype'),
+       local('Noto Nastaliq Urdu'),
+       local('Jameel Noori Nastaleeq'),
+       local('Urdu Typesetting');
+}
+
+@font-face {
+  font-family: 'Noto Nastaliq Urdu';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/NotoNastaliqUrdu-Bold.ttf') format('truetype'),
+       local('Noto Nastaliq Urdu Bold'),
+       local('Jameel Noori Nastaleeq');
+}
+
+@font-face {
+  font-family: 'Vazirmatn';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/Vazirmatn-Regular.ttf') format('truetype'),
+       local('Vazirmatn');
+}
+
+@font-face {
+  font-family: 'Vazirmatn';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('/fonts/Vazirmatn-SemiBold.ttf') format('truetype'),
+       local('Vazirmatn SemiBold');
+}
+
+@font-face {
+  font-family: 'Vazirmatn';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('/fonts/Vazirmatn-Bold.ttf') format('truetype'),
+       local('Vazirmatn Bold');
+}
+
+@layer base {
+  body {
+    font-family: 'Vazirmatn', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background-color: #f8fafc;
+    color: #0f172a;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* Authentic Farsi / Urdu Styling - Crisp and Easy to Read */
+  body.lang-ur,
+  [lang="ur"],
+  .font-urdu {
+    font-family: 'Vazirmatn', 'Noto Nastaliq Urdu', 'Jameel Noori Nastaleeq', 'Urdu Typesetting', -apple-system, sans-serif;
+    letter-spacing: 0;
+  }
+
+  /* Specific Farsi Style (Default - ultra legible on screens & buttons) */
+  body.font-style-farsi,
+  body.font-style-farsi [lang="ur"],
+  .font-farsi {
+    font-family: 'Vazirmatn', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+    line-height: 1.45;
+  }
+
+  /* Traditional Nastaliq Calligraphy Style */
+  body.font-style-nastaliq,
+  body.font-style-nastaliq [lang="ur"],
+  .font-nastaliq {
+    font-family: 'Noto Nastaliq Urdu', 'Jameel Noori Nastaleeq', 'Urdu Typesetting', serif !important;
+    line-height: 1.85;
+  }
+
+  /* Modern light scrollbars for desktop application */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #f1f5f9;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 4px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+  }
+}
+
+/* ==========================================================
+   Print Layouts: Thermal Receipt & A4 Ledger Statement
+   ========================================================== */
+@media print {
+  /* Hide the rest of the application interface */
+  body * {
+    visibility: hidden;
+  }
+
+  /* 1. Thermal Receipt Print Area */
+  #thermal-receipt-print-area, #thermal-receipt-print-area * {
+    visibility: visible;
+  }
+
+  #thermal-receipt-print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 2mm !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-family: 'JetBrains Mono', 'Courier New', Courier, monospace !important;
+    font-size: 11px !important;
+    line-height: 1.25 !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  /* 58mm specific print sizing */
+  .receipt-58mm {
+    width: 54mm !important;
+    max-width: 54mm !important;
+    font-size: 9.5px !important;
+  }
+
+  /* 80mm specific print sizing */
+  .receipt-80mm {
+    width: 76mm !important;
+    max-width: 76mm !important;
+    font-size: 11.5px !important;
+  }
+
+  /* When printing Urdu Thermal Receipt */
+  #thermal-receipt-print-area.receipt-urdu,
+  #thermal-receipt-print-area.receipt-urdu * {
+    font-family: 'Vazirmatn', 'Noto Nastaliq Urdu', 'Jameel Noori Nastaleeq', 'Segoe UI', Tahoma, sans-serif !important;
+  }
+
+  /* 3. Supplier Purchase Order Voucher (A4 / Thermal Print) */
+  #supplier-bill-print-area, #supplier-bill-print-area * {
+    visibility: visible;
+  }
+
+  #supplier-bill-print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 8mm 12mm !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    font-family: 'Vazirmatn', 'Noto Nastaliq Urdu', 'Inter', sans-serif !important;
+    font-size: 11px !important;
+    line-height: 1.4 !important;
+    box-shadow: none !important;
+    border: none !important;
+    display: block !important;
+  }
+
+  /* 2. Official Ledger / Khata Statement (A4 / Page Print) */
+  #ledger-printable-statement, #ledger-printable-statement * {
+    visibility: visible;
+  }
+
+  #ledger-printable-statement {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 10mm 15mm !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+    font-size: 11px !important;
+    line-height: 1.35 !important;
+    box-shadow: none !important;
+    border: none !important;
+    display: block !important;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  @page {
+    margin: 8mm;
+    size: auto;
+  }
+}
+
+.font-mono-receipt {
+  font-family: 'JetBrains Mono', 'Courier New', Courier, monospace;
+}
