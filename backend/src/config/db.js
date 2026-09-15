@@ -8,12 +8,17 @@ function resolveDbPath() {
   if (process.env.VERCEL) {
     const tmpDb = '/tmp/unaib_pos.sqlite';
     const originalDb = path.join(__dirname, '../../../unaib_pos.sqlite');
-    if (!fs.existsSync(tmpDb) && fs.existsSync(originalDb)) {
-      try {
-        fs.copyFileSync(originalDb, tmpDb);
-      } catch (err) {
-        console.error('Failed copying SQLite DB to /tmp:', err.message);
+    try {
+      if (fs.existsSync(originalDb)) {
+        const origStat = fs.statSync(originalDb);
+        const tmpExists = fs.existsSync(tmpDb);
+        if (!tmpExists || fs.statSync(tmpDb).size !== origStat.size || fs.statSync(tmpDb).mtimeMs < origStat.mtimeMs) {
+          fs.copyFileSync(originalDb, tmpDb);
+          console.log('Successfully synced fresh DB from repository to /tmp');
+        }
       }
+    } catch (err) {
+      console.error('Failed syncing SQLite DB to /tmp:', err.message);
     }
     return tmpDb;
   }

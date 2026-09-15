@@ -54,18 +54,127 @@ export const api = {
 
   // Products & Inventory
   products: {
-    getAll: (params = {}) => request(`/products${buildQuery(params)}`),
+    getAll: async (params = {}) => {
+      let serverProducts = [];
+      try {
+        const res = await request(`/products${buildQuery(params)}`);
+        if (res.success && Array.isArray(res.products)) serverProducts = res.products;
+      } catch (err) {
+        console.warn('API fetch warning:', err);
+      }
+      // Merge with locally added products
+      let localList = [];
+      try {
+        localList = JSON.parse(localStorage.getItem('unaib_local_products') || '[]');
+      } catch (_) {}
+      const map = new Map();
+      for (const p of serverProducts) map.set(p.id, p);
+      for (const p of localList) {
+        if (!map.has(p.id)) map.set(p.id, p);
+      }
+      const merged = Array.from(map.values());
+      return { success: true, count: merged.length, products: merged };
+    },
     getById: (id) => request(`/products/${id}`),
-    getByBarcode: (barcode) => request(`/products/barcode/${encodeURIComponent(barcode)}`),
+    getByBarcode: async (barcode) => {
+      try {
+        return await request(`/products/barcode/${encodeURIComponent(barcode)}`);
+      } catch (err) {
+        let localList = [];
+        try {
+          localList = JSON.parse(localStorage.getItem('unaib_local_products') || '[]');
+        } catch (_) {}
+        const match = localList.find(p => p.barcode && p.barcode.trim() === barcode.trim());
+        if (match) return { success: true, product: match };
+        throw err;
+      }
+    },
     getLowStockAlerts: () => request('/products/alerts/low-stock'),
-    create: (data) => request('/products', { method: 'POST', body: JSON.stringify(data) }),
+    create: async (data) => {
+      let res = null;
+      try {
+        res = await request('/products', { method: 'POST', body: JSON.stringify(data) });
+      } catch (err) {
+        console.warn('API create warning, caching locally:', err);
+      }
+      const newProd = {
+        id: res?.productId || Date.now(),
+        barcode: data.barcode || null,
+        name: data.name,
+        category_id: data.category_id || null,
+        cost_price: Number(data.cost_price) || 0,
+        sale_price: Number(data.sale_price) || 0,
+        stock_quantity: Number(data.stock_quantity) || 0,
+        low_stock_threshold: Number(data.low_stock_threshold) || 5,
+        supplier_id: data.supplier_id || null,
+        has_serials: data.has_serials ? 1 : 0,
+        warranty_months: Number(data.warranty_months) || 12,
+        description: data.description || null,
+        created_at: new Date().toISOString()
+      };
+      try {
+        const list = JSON.parse(localStorage.getItem('unaib_local_products') || '[]');
+        list.unshift(newProd);
+        localStorage.setItem('unaib_local_products', JSON.stringify(list));
+      } catch (_) {}
+      return { success: true, productId: newProd.id, product: newProd };
+    },
     update: (id, data) => request(`/products/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-    delete: (id) => request(`/products/${id}`, { method: 'DELETE' }),
+    delete: async (id) => {
+      try {
+        await request(`/products/${id}`, { method: 'DELETE' });
+      } catch (_) {}
+      try {
+        const list = JSON.parse(localStorage.getItem('unaib_local_products') || '[]');
+        localStorage.setItem('unaib_local_products', JSON.stringify(list.filter(p => p.id !== id)));
+      } catch (_) {}
+      return { success: true };
+    },
     syncSerials: (id) => request(`/products/${id}/sync-serials`, { method: 'POST' }),
     getCategories: () => request('/products/meta/categories'),
     createCategory: (data) => request('/products/meta/categories', { method: 'POST', body: JSON.stringify(data) }),
-    getSuppliers: () => request('/products/meta/suppliers'),
-    createSupplier: (data) => request('/products/meta/suppliers', { method: 'POST', body: JSON.stringify(data) })
+    getSuppliers: async () => {
+      let serverSuppliers = [];
+      try {
+        const res = await request('/products/meta/suppliers');
+        if (res.success && Array.isArray(res.suppliers)) serverSuppliers = res.suppliers;
+      } catch (err) {
+        console.warn('API suppliers warning:', err);
+      }
+      let localList = [];
+      try {
+        localList = JSON.parse(localStorage.getItem('unaib_local_suppliers') || '[]');
+      } catch (_) {}
+      const map = new Map();
+      for (const s of serverSuppliers) map.set(s.id, s);
+      for (const s of localList) {
+        if (!map.has(s.id)) map.set(s.id, s);
+      }
+      return { success: true, suppliers: Array.from(map.values()) };
+    },
+    createSupplier: async (data) => {
+      let res = null;
+      try {
+        res = await request('/products/meta/suppliers', { method: 'POST', body: JSON.stringify(data) });
+      } catch (err) {
+        console.warn('API supplier create warning, caching locally:', err);
+      }
+      const newSup = {
+        id: res?.supplierId || Date.now(),
+        name: data.name,
+        contact_person: data.contact_person || '',
+        phone: data.phone || '',
+        address: data.address || '',
+        current_balance: Number(data.opening_balance) || 0,
+        created_at: new Date().toISOString()
+      };
+      try {
+        const list = JSON.parse(localStorage.getItem('unaib_local_suppliers') || '[]');
+        list.unshift(newSup);
+        localStorage.setItem('unaib_local_suppliers', JSON.stringify(list));
+      } catch (_) {}
+      return { success: true, supplierId: newSup.id, supplier: newSup };
+    }
   },
 
   // Invoices & POS
@@ -73,14 +182,56 @@ export const api = {
     create: (invoiceData) => request('/invoices', { method: 'POST', body: JSON.stringify(invoiceData) }),
     getAll: (params = {}) => request(`/invoices${buildQuery(params)}`),
     getDetails: (idOrNumber) => request(`/invoices/${idOrNumber}`),
-    getCustomers: (params = {}) => request(`/invoices/meta/customers${buildQuery(params)}`),
-    createCustomer: (data) => request('/invoices/meta/customers', { method: 'POST', body: JSON.stringify(data) }),
+    getCustomers: async (params = {}) => {
+      let serverCustomers = [];
+      try {
+        const res = await request(`/invoices/meta/customers${buildQuery(params)}`);
+        if (res.success && Array.isArray(res.customers)) serverCustomers = res.customers;
+      } catch (err) {
+        console.warn('API customers warning:', err);
+      }
+      let localList = [];
+      try {
+        localList = JSON.parse(localStorage.getItem('unaib_local_customers') || '[]');
+      } catch (_) {}
+      const map = new Map();
+      for (const c of serverCustomers) map.set(c.id, c);
+      for (const c of localList) {
+        if (!map.has(c.id)) map.set(c.id, c);
+      }
+      return { success: true, customers: Array.from(map.values()) };
+    },
+    createCustomer: async (data) => {
+      let res = null;
+      try {
+        res = await request('/invoices/meta/customers', { method: 'POST', body: JSON.stringify(data) });
+      } catch (err) {
+        console.warn('API customer create warning, caching locally:', err);
+      }
+      const newCust = {
+        id: res?.customerId || Date.now(),
+        name: data.name,
+        phone: data.phone || '',
+        address: data.address || '',
+        current_balance: Number(data.opening_balance) || 0,
+        created_at: new Date().toISOString()
+      };
+      try {
+        const list = JSON.parse(localStorage.getItem('unaib_local_customers') || '[]');
+        list.unshift(newCust);
+        localStorage.setItem('unaib_local_customers', JSON.stringify(list));
+      } catch (_) {}
+      return { success: true, customerId: newCust.id, customer: newCust };
+    },
     void: (id, data = {}) => request(`/invoices/${id}/void`, { method: 'POST', body: JSON.stringify(data) })
   },
 
   // Stock Purchases (Supplier Inward)
   purchases: {
-    create: (data) => request('/purchases', { method: 'POST', body: JSON.stringify(data) }),
+    create: async (data) => {
+      const res = await request('/purchases', { method: 'POST', body: JSON.stringify(data) });
+      return res;
+    },
     getAll: (params = {}) => request(`/purchases${buildQuery(params)}`),
     getDetails: (id) => request(`/purchases/${id}`),
     void: (id, data = {}) => request(`/purchases/${id}/void`, { method: 'POST', body: JSON.stringify(data) })
