@@ -142,5 +142,13 @@ export const api = {
   printer: {
     printReceipt: (data) => request('/printer/print-receipt', { method: 'POST', body: JSON.stringify(data) }),
     testConnection: (config = {}) => request('/printer/test-connection', { method: 'POST', body: JSON.stringify(config) })
+  },
+
+  // Returns (Sale & Purchase Returns)
+  returns: {
+    getSaleReturns: () => request('/returns/sale'),
+    createSaleReturn: (data) => request('/returns/sale', { method: 'POST', body: JSON.stringify(data) }),
+    getPurchaseReturns: () => request('/returns/purchase'),
+    createPurchaseReturn: (data) => request('/returns/purchase', { method: 'POST', body: JSON.stringify(data) })
   }
 };

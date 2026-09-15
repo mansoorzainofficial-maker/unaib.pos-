@@ -224,6 +224,60 @@ CREATE TABLE IF NOT EXISTS store_settings (
     value TEXT NOT NULL
 );
 
+-- 16. Sales Returns (سیل واپسی)
+CREATE TABLE IF NOT EXISTS sales_returns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    return_number TEXT UNIQUE NOT NULL,
+    invoice_id INTEGER REFERENCES invoices(id) ON DELETE SET NULL,
+    invoice_number TEXT,
+    customer_id INTEGER REFERENCES customers(id) ON DELETE SET NULL,
+    customer_name TEXT,
+    customer_phone TEXT,
+    refund_mode TEXT NOT NULL DEFAULT 'cash', -- 'cash', 'khata_credit'
+    total_refund_amount REAL NOT NULL DEFAULT 0.0,
+    reason TEXT,
+    cashier_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 17. Sales Return Items
+CREATE TABLE IF NOT EXISTS sales_return_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sales_return_id INTEGER NOT NULL REFERENCES sales_returns(id) ON DELETE CASCADE,
+    product_id INTEGER NOT NULL REFERENCES products(id),
+    product_name TEXT NOT NULL,
+    quantity INTEGER NOT NULL DEFAULT 1,
+    unit_price REAL NOT NULL,
+    total_amount REAL NOT NULL,
+    serial_numbers TEXT -- JSON array of returned serials
+);
+
+-- 18. Purchase Returns (خریداری واپسی / سپلائر کو مال واپسی)
+CREATE TABLE IF NOT EXISTS purchase_returns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    return_number TEXT UNIQUE NOT NULL,
+    purchase_id INTEGER REFERENCES purchases(id) ON DELETE SET NULL,
+    purchase_number TEXT,
+    supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE CASCADE,
+    supplier_name TEXT,
+    total_amount REAL NOT NULL DEFAULT 0.0,
+    refund_mode TEXT NOT NULL DEFAULT 'deduct_balance', -- 'deduct_balance', 'cash_received'
+    reason TEXT,
+    cashier_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 19. Purchase Return Items
+CREATE TABLE IF NOT EXISTS purchase_return_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    purchase_return_id INTEGER NOT NULL REFERENCES purchase_returns(id) ON DELETE CASCADE,
+    product_id INTEGER NOT NULL REFERENCES products(id),
+    product_name TEXT NOT NULL,
+    quantity INTEGER NOT NULL DEFAULT 1,
+    unit_cost REAL NOT NULL,
+    total_amount REAL NOT NULL
+);
+
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_products_barcode ON products(barcode);
 CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
@@ -231,3 +285,5 @@ CREATE INDEX IF NOT EXISTS idx_serial_numbers_sn ON serial_numbers(serial_number
 CREATE INDEX IF NOT EXISTS idx_invoices_num ON invoices(invoice_number);
 CREATE INDEX IF NOT EXISTS idx_purchases_num ON purchases(purchase_number);
 CREATE INDEX IF NOT EXISTS idx_ledger_party ON ledger_entries(party_type, party_id);
+CREATE INDEX IF NOT EXISTS idx_sales_returns_num ON sales_returns(return_number);
+CREATE INDEX IF NOT EXISTS idx_purchase_returns_num ON purchase_returns(return_number);

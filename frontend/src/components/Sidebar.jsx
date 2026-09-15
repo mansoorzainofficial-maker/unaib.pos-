@@ -12,7 +12,8 @@ import {
   Landmark,
   Truck,
   BookOpen,
-  Store
+  Store,
+  RotateCcw
 } from 'lucide-react';
 
 export default function Sidebar({ currentTab, setTab }) {
@@ -21,9 +22,11 @@ export default function Sidebar({ currentTab, setTab }) {
 
   const mainNavItems = [
     { id: 'pos', label: isUrdu ? 'فروخت و بلنگ (Sale)' : 'Cash Billing (POS)', icon: ShoppingCart },
+    { id: 'sale_return', label: isUrdu ? '🔄 سیل واپسی (Sale Return)' : 'Sale Return', icon: RotateCcw },
     { id: 'invoices', label: isUrdu ? 'بلوں کا ریکارڈ (Invoices)' : 'Bills & Invoices', icon: Receipt },
     { id: 'inventory', label: isUrdu ? 'سامان و اسٹاک (Stock)' : 'Inventory & Stock', icon: Package },
     { id: 'purchases', label: isUrdu ? 'مال خریداری (Purchases)' : 'Stock Purchases (GRN)', icon: Truck },
+    { id: 'purchase_return', label: isUrdu ? '🚚↩️ خریداری واپسی' : 'Purchase Return', icon: RotateCcw },
     { id: 'ledger', label: isUrdu ? 'کھاتہ و پارٹیاں (Khata)' : 'Party Ledgers (Khata)', icon: BookOpen },
     { id: 'warranty', label: isUrdu ? 'وارنٹی و سیریل نمبر' : 'Warranty & Serials', icon: ShieldAlert },
     { id: 'drawer', label: isUrdu ? 'دکان کا گلہ (Drawer)' : 'Cash Drawer', icon: Landmark },

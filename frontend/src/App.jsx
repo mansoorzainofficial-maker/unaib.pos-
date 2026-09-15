@@ -12,6 +12,8 @@ import ExpensesScreen from './pages/ExpensesScreen';
 import SettingsScreen from './pages/SettingsScreen';
 import PurchasesScreen from './pages/PurchasesScreen';
 import LedgerScreen from './pages/LedgerScreen';
+import SaleReturnScreen from './pages/SaleReturnScreen';
+import PurchaseReturnScreen from './pages/PurchaseReturnScreen';
 import LoginScreen from './pages/LoginScreen';
 import CashDrawerModal from './pages/CashDrawerModal';
 import {
@@ -20,7 +22,8 @@ import {
   Truck,
   Building2,
   Users,
-  BarChart3
+  BarChart3,
+  RotateCcw
 } from 'lucide-react';
 
 export default function App() {
@@ -93,6 +96,20 @@ export default function App() {
             <span>{isUrdu ? 'نیا بل / کاؤنٹر سیل' : 'Cash Billing (Naqad)'}</span>
           </button>
 
+          {/* 2b. SALE RETURN (سیل واپسی) */}
+          <button
+            type="button"
+            onClick={() => setCurrentTab('sale_return')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+              activeTabSafe === 'sale_return'
+                ? 'bg-amber-500 text-slate-950 shadow-sm shadow-amber-500/30'
+                : 'bg-amber-50/60 text-amber-900 hover:bg-amber-100/70 border border-amber-200'
+            }`}
+          >
+            <RotateCcw className="w-4 h-4 text-amber-600" />
+            <span>{isUrdu ? '🔄 سیل واپسی' : 'Sale Return'}</span>
+          </button>
+
           {/* 3. GRN (STOCK PURCHASES) */}
           <button
             type="button"
@@ -105,6 +122,20 @@ export default function App() {
           >
             <Truck className="w-4 h-4" />
             <span>{isUrdu ? 'مال خریداری (GRN)' : 'GRN Purchases'}</span>
+          </button>
+
+          {/* 3b. PURCHASE RETURN (خریداری واپسی) */}
+          <button
+            type="button"
+            onClick={() => setCurrentTab('purchase_return')}
+            className={`flex items-center space-x-2 px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 cursor-pointer ${
+              activeTabSafe === 'purchase_return'
+                ? 'bg-purple-600 text-white shadow-sm shadow-purple-500/30'
+                : 'bg-purple-50/60 text-purple-900 hover:bg-purple-100/70 border border-purple-200'
+            }`}
+          >
+            <RotateCcw className="w-4 h-4 text-purple-600" />
+            <span>{isUrdu ? '🚚↩️ خریداری واپسی' : 'Purchase Return'}</span>
           </button>
 
           {/* 4. SUPPLIERS */}
@@ -170,6 +201,9 @@ export default function App() {
           {activeTabSafe === 'pos' && (
             <POSScreen onLowStockChange={setLowStockCount} />
           )}
+          {activeTabSafe === 'sale_return' && (
+            <SaleReturnScreen />
+          )}
           {activeTabSafe === 'invoices' && (
             <InvoicesHistoryScreen />
           )}
@@ -178,6 +212,9 @@ export default function App() {
           )}
           {activeTabSafe === 'purchases' && (
             <PurchasesScreen />
+          )}
+          {activeTabSafe === 'purchase_return' && (
+            <PurchaseReturnScreen />
           )}
           {activeTabSafe === 'ledger' && (
             <LedgerScreen initialTab={ledgerTab} />
