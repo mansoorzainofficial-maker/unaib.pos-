@@ -145,12 +145,15 @@ export default function InventoryScreen({ onLowStockChange }) {
         await api.products.update(editingProduct.id, payload);
         setSuccessMsg('Product updated successfully');
       } else {
-        await api.products.create(payload);
+        const res = await api.products.create(payload);
         setSuccessMsg('Product created successfully');
+        if (res && res.product) {
+          setProducts(prev => [res.product, ...prev.filter(p => p.id !== res.product.id)]);
+        }
       }
 
       setIsEditModalOpen(false);
-      loadData();
+      loadData(true);
     } catch (err) {
       setErrorMsg(err.message || 'Operation failed');
     }
@@ -735,6 +738,11 @@ export default function InventoryScreen({ onLowStockChange }) {
         maxWidth="max-w-2xl"
       >
         <form onSubmit={handleSaveProduct} className="space-y-3">
+          {errorMsg && (
+            <div className="p-2.5 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-lg font-bold">
+              {errorMsg}
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div className="col-span-2">
               <label className="block text-[11px] font-semibold text-slate-700 mb-1">
