@@ -237,6 +237,8 @@ function createProduct(req, res) {
 
     const stockQty = Number(stock_quantity) || 0;
     const isSerialized = has_serials ? 1 : 0;
+    const cleanCategoryId = (category_id && Number(category_id) > 0) ? Number(category_id) : null;
+    const cleanSupplierId = (supplier_id && Number(supplier_id) > 0) ? Number(supplier_id) : null;
 
     const result = transaction(({ run }) => {
       const insRes = run(`
@@ -248,12 +250,12 @@ function createProduct(req, res) {
       `, [
         barcode ? barcode.trim() : null,
         name.trim(),
-        category_id || null,
+        cleanCategoryId,
         Number(cost_price) || 0,
         Number(sale_price) || 0,
         stockQty,
         Number(low_stock_threshold) || 5,
-        supplier_id || null,
+        cleanSupplierId,
         isSerialized,
         Number(warranty_months) || 12,
         description || null
@@ -332,6 +334,8 @@ function updateProduct(req, res) {
 
     const newStock = Number(stock_quantity) || 0;
     const isSerialized = has_serials ? 1 : 0;
+    const cleanCategoryId = (category_id && Number(category_id) > 0) ? Number(category_id) : null;
+    const cleanSupplierId = (supplier_id && Number(supplier_id) > 0) ? Number(supplier_id) : null;
 
     transaction(({ run, query }) => {
       run(`
@@ -352,12 +356,12 @@ function updateProduct(req, res) {
       `, [
         barcode ? barcode.trim() : null,
         name.trim(),
-        category_id || null,
+        cleanCategoryId,
         Number(cost_price) || 0,
         Number(sale_price) || 0,
         newStock,
         Number(low_stock_threshold) || 5,
-        supplier_id || null,
+        cleanSupplierId,
         isSerialized,
         Number(warranty_months) || 12,
         description || null,

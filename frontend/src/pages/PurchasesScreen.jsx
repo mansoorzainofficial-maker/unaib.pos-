@@ -99,6 +99,57 @@ export default function PurchasesScreen() {
     }
   };
 
+  // Quick Add Product modal state inside GRN
+  const [isAddProductOpen, setIsAddProductOpen] = useState(false);
+  const [newProductForm, setNewProductForm] = useState({
+    name: '',
+    barcode: '',
+    sale_price: '',
+    cost_price: '',
+    has_serials: 0
+  });
+  const [productSubmitting, setProductSubmitting] = useState(false);
+
+  const handleCreateProduct = async (e) => {
+    e.preventDefault();
+    if (!newProductForm.name.trim() || !newProductForm.sale_price) {
+      alert(isUrdu ? 'پراڈکٹ کا نام اور فروخت ریٹ لازمی ہیں' : 'Product name and sale price are required');
+      return;
+    }
+    setProductSubmitting(true);
+    try {
+      const res = await api.products.create({
+        name: newProductForm.name.trim(),
+        barcode: newProductForm.barcode ? newProductForm.barcode.trim() : null,
+        sale_price: Number(newProductForm.sale_price) || 0,
+        cost_price: Number(newProductForm.cost_price) || 0,
+        stock_quantity: 0,
+        supplier_id: supplierId ? Number(supplierId) : null,
+        has_serials: Number(newProductForm.has_serials) || 0
+      });
+
+      if (res.success) {
+        setIsAddProductOpen(false);
+        const prodRes = await api.products.getAll();
+        const list = prodRes.products || prodRes.data || [];
+        setProducts(list);
+
+        // Automatically select the created product in the GRN row
+        const createdId = res.productId;
+        setSelectedProductId(createdId);
+        setItemCost(Number(newProductForm.cost_price) || 0);
+        setItemSalePrice(Number(newProductForm.sale_price) || 0);
+        setItemQty(1);
+
+        setNewProductForm({ name: '', barcode: '', sale_price: '', cost_price: '', has_serials: 0 });
+      }
+    } catch (err) {
+      alert(err.message || 'Failed to add product');
+    } finally {
+      setProductSubmitting(false);
+    }
+  };
+
   useEffect(() => {
     loadData();
   }, [search, supplierFilter]);
@@ -784,9 +835,21 @@ export default function PurchasesScreen() {
 
             <div className="grid grid-cols-12 gap-2 text-xs">
               <div className="col-span-12 md:col-span-3">
-                <label className="block text-[10px] font-semibold text-slate-700 mb-1">
-                  {isUrdu ? 'سامان / پراڈکٹ' : 'Product'}
-                </label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-[10px] font-semibold text-slate-700">
+                    {isUrdu ? 'سامان / پراڈکٹ *' : 'Product *'}
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewProductForm({ name: '', barcode: '', sale_price: '', cost_price: itemCost || '', has_serials: 0 });
+                      setIsAddProductOpen(true);
+                    }}
+                    className="text-[10px] text-amber-700 hover:text-amber-800 font-bold cursor-pointer"
+                  >
+                    {isUrdu ? '+ نیا سامان بنائیں' : '+ Add New'}
+                  </button>
+                </div>
                 <select
                   value={selectedProductId}
                   onChange={(e) => handleProductSelect(e.target.value)}
@@ -1508,6 +1571,199 @@ export default function PurchasesScreen() {
             >
               <Ban className="w-3.5 h-3.5" />
               <span>{isVoiding ? (isUrdu ? 'منسوخ ہو رہا ہے...' : 'Voiding...') : (isUrdu ? 'ہاں، بل منسوخ کریں' : 'Yes, Void Purchase')}</span>
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* QUICK ADD SUPPLIER MODAL */}
+      <Modal
+        isOpen={isAddSupplierOpen}
+        onClose={() => setIsAddSupplierOpen(false)}
+        title={isUrdu ? 'نیا سپلائر / وینڈر درج کریں (Quick Add Supplier)' : 'Quick Add Supplier / Vendor'}
+        maxWidth="max-w-md"
+      >
+        <form onSubmit={handleCreateSupplier} className="space-y-3 text-xs">
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+              {isUrdu ? 'سپلائر / ڈسٹری بیوٹر کا نام *' : 'Supplier Name *'}
+            </label>
+            <input
+              type="text"
+              required
+              value={newSupplierForm.name}
+              onChange={(e) => setNewSupplierForm({ ...newSupplierForm, name: e.target.value })}
+              placeholder={isUrdu ? 'مثال: ایپکس ٹیک ڈسٹری بیوٹرز' : 'e.g. Apex Tech Distributors'}
+              className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-hidden font-bold"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                {isUrdu ? 'رابطہ کار (Contact Person)' : 'Contact Person'}
+              </label>
+              <input
+                type="text"
+                value={newSupplierForm.contact_person}
+                onChange={(e) => setNewSupplierForm({ ...newSupplierForm, contact_person: e.target.value })}
+                placeholder="مثال: حمزہ ملک"
+                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-hidden"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                {isUrdu ? 'فون نمبر' : 'Phone Number'}
+              </label>
+              <input
+                type="text"
+                value={newSupplierForm.phone}
+                onChange={(e) => setNewSupplierForm({ ...newSupplierForm, phone: e.target.value })}
+                placeholder="0321-1234567"
+                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-hidden"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+              {isUrdu ? 'پتہ / مارکیٹ' : 'Address / Market'}
+            </label>
+            <input
+              type="text"
+              value={newSupplierForm.address}
+              onChange={(e) => setNewSupplierForm({ ...newSupplierForm, address: e.target.value })}
+              placeholder="مثال: ٹیکنو سٹی کراچی"
+              className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-hidden"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+              {isUrdu ? 'سابقہ ادھار رقم (اگر پہلے کے واجبات ہوں)' : 'Previous Balance / Debt (Rs.)'}
+            </label>
+            <input
+              type="number"
+              min="0"
+              value={newSupplierForm.opening_balance}
+              onChange={(e) => setNewSupplierForm({ ...newSupplierForm, opening_balance: e.target.value })}
+              placeholder="0"
+              className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-hidden font-mono font-bold"
+            />
+          </div>
+
+          <div className="flex gap-2 pt-2 border-t border-slate-200">
+            <button
+              type="button"
+              onClick={() => setIsAddSupplierOpen(false)}
+              className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg cursor-pointer"
+            >
+              {isUrdu ? 'منسوخ' : 'Cancel'}
+            </button>
+            <button
+              type="submit"
+              disabled={supplierSubmitting}
+              className="flex-1 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-lg cursor-pointer shadow-xs"
+            >
+              {supplierSubmitting ? 'Saving...' : (isUrdu ? 'سپلائر محفوظ کریں' : 'Save Supplier')}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* QUICK ADD PRODUCT MODAL */}
+      <Modal
+        isOpen={isAddProductOpen}
+        onClose={() => setIsAddProductOpen(false)}
+        title={isUrdu ? 'نیا سامان / پراڈکٹ انوینٹری میں درج کریں' : 'Quick Add Product to Inventory'}
+        maxWidth="max-w-md"
+      >
+        <form onSubmit={handleCreateProduct} className="space-y-3 text-xs">
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+              {isUrdu ? 'سامان / پراڈکٹ کا مکمل نام *' : 'Product Name *'}
+            </label>
+            <input
+              type="text"
+              required
+              value={newProductForm.name}
+              onChange={(e) => setNewProductForm({ ...newProductForm, name: e.target.value })}
+              placeholder={isUrdu ? 'مثال: Logitech G102 Gaming Mouse' : 'e.g. Logitech G102 Gaming Mouse'}
+              className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-hidden font-bold"
+            />
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+              {isUrdu ? 'بارکوڈ (اگر ہو تو اسکین کریں)' : 'Barcode (Optional)'}
+            </label>
+            <input
+              type="text"
+              value={newProductForm.barcode}
+              onChange={(e) => setNewProductForm({ ...newProductForm, barcode: e.target.value })}
+              placeholder="880609..."
+              className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-hidden font-mono"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                {isUrdu ? 'خریداری لاگت / ریٹ (روپے)' : 'Cost Price (Rs.)'}
+              </label>
+              <input
+                type="number"
+                min="0"
+                value={newProductForm.cost_price}
+                onChange={(e) => setNewProductForm({ ...newProductForm, cost_price: e.target.value })}
+                placeholder="0"
+                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:outline-hidden font-mono font-bold"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                {isUrdu ? 'فروخت ریٹ / سیل ریٹ (روپے) *' : 'Sale Price (Rs.) *'}
+              </label>
+              <input
+                type="number"
+                min="0"
+                required
+                value={newProductForm.sale_price}
+                onChange={(e) => setNewProductForm({ ...newProductForm, sale_price: e.target.value })}
+                placeholder="0"
+                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-emerald-700 focus:outline-hidden font-mono font-bold"
+              />
+            </div>
+          </div>
+
+          <div className="pt-1">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={newProductForm.has_serials === 1}
+                onChange={(e) => setNewProductForm({ ...newProductForm, has_serials: e.target.checked ? 1 : 0 })}
+                className="rounded text-amber-600 focus:ring-amber-500"
+              />
+              <span className="text-[11px] text-slate-700 font-medium">
+                {isUrdu ? 'وارنٹی سیریل نمبر لازمی ہے (جیسے SSD، ریم، کارڈ)' : 'Serialized Component (e.g. SSD, GPU, RAM)'}
+              </span>
+            </label>
+          </div>
+
+          <div className="flex gap-2 pt-2 border-t border-slate-200">
+            <button
+              type="button"
+              onClick={() => setIsAddProductOpen(false)}
+              className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg cursor-pointer"
+            >
+              {isUrdu ? 'منسوخ' : 'Cancel'}
+            </button>
+            <button
+              type="submit"
+              disabled={productSubmitting}
+              className="flex-1 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-lg cursor-pointer shadow-xs"
+            >
+              {productSubmitting ? 'Adding...' : (isUrdu ? 'سامان شامل کریں' : 'Add Product')}
             </button>
           </div>
         </form>
