@@ -11,9 +11,9 @@ router.get('/:id', authRequired, prodCtrl.getProductById);
 
 // Product modifications
 router.post('/', authRequired, prodCtrl.createProduct);
-router.put('/:id', authRequired, adminOnly, prodCtrl.updateProduct);
-router.delete('/:id', authRequired, adminOnly, prodCtrl.deleteProduct);
-router.post('/:id/sync-serials', authRequired, adminOnly, prodCtrl.syncProductSerials);
+router.put('/:id', authRequired, prodCtrl.updateProduct);
+router.delete('/:id', authRequired, prodCtrl.deleteProduct);
+router.post('/:id/sync-serials', authRequired, prodCtrl.syncProductSerials);
 
 // Categories & Suppliers
 router.get('/meta/categories', authRequired, prodCtrl.getCategories);

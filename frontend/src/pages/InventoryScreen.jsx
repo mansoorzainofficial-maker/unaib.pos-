@@ -292,15 +292,13 @@ export default function InventoryScreen({ onLowStockChange }) {
           </div>
 
           <div className="flex items-center gap-2.5 pt-4 mt-2 border-t border-slate-100">
-            {isAdmin && (
-              <button
-                onClick={handleOpenCreate}
-                className="flex items-center space-x-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                <span>{isUrdu ? '+ نیا سامان شامل کریں' : '+ Add Accessory'}</span>
-              </button>
-            )}
+            <button
+              onClick={handleOpenCreate}
+              className="flex items-center space-x-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              <span>{isUrdu ? '+ نیا سامان شامل کریں' : '+ Add Accessory'}</span>
+            </button>
 
             <button
               onClick={() => loadData(false)}
