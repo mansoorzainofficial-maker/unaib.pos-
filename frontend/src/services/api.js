@@ -5,7 +5,8 @@ const API_BASE = (typeof window !== 'undefined' && window.location.protocol.star
 function getHeaders() {
   const token = localStorage.getItem('unaib_token');
   const headers = {
-    'Content-Type': 'application/json'
+    'Content-Type': 'application/json',
+    'ngrok-skip-browser-warning': '1'
   };
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;

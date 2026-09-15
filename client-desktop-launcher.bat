@@ -2,8 +2,8 @@
 title Unaib Computer Accessories POS
 color 0A
 
-:: Target URL: default is local server, or can be set to Cloud URL
-set "TARGET_URL=http://localhost:5001"
+:: Target URL: live cloud tunnel URL
+set "TARGET_URL=https://gas-elliptic-mutate.ngrok-free.dev"
 if not "%~1"=="" set "TARGET_URL=%~1"
 
 echo ===================================================

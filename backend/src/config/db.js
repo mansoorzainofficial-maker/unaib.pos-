@@ -2,18 +2,39 @@ const fs = require('fs');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 
-// Database file path - stored in project root or app data
-const DB_PATH = process.env.DB_PATH || path.join(__dirname, '../../../unaib_pos.sqlite');
+// Database file path - supports local desktop and Vercel serverless environment
+function resolveDbPath() {
+  if (process.env.DB_PATH) return process.env.DB_PATH;
+  if (process.env.VERCEL) {
+    const tmpDb = '/tmp/unaib_pos.sqlite';
+    const originalDb = path.join(__dirname, '../../../unaib_pos.sqlite');
+    if (!fs.existsSync(tmpDb) && fs.existsSync(originalDb)) {
+      try {
+        fs.copyFileSync(originalDb, tmpDb);
+      } catch (err) {
+        console.error('Failed copying SQLite DB to /tmp:', err.message);
+      }
+    }
+    return tmpDb;
+  }
+  return path.join(__dirname, '../../../unaib_pos.sqlite');
+}
+
+const DB_PATH = resolveDbPath();
 
 let dbInstance = null;
 
 function getDb() {
   if (!dbInstance) {
     dbInstance = new DatabaseSync(DB_PATH);
-    // Performance optimizations for high-speed POS desktop
-    dbInstance.exec('PRAGMA journal_mode = WAL;');
-    dbInstance.exec('PRAGMA synchronous = NORMAL;');
-    dbInstance.exec('PRAGMA foreign_keys = ON;');
+    // Performance optimizations for high-speed POS
+    try {
+      dbInstance.exec('PRAGMA journal_mode = WAL;');
+      dbInstance.exec('PRAGMA synchronous = NORMAL;');
+      dbInstance.exec('PRAGMA foreign_keys = ON;');
+    } catch (e) {
+      console.warn('Pragma setup notice:', e.message);
+    }
   }
   return dbInstance;
 }

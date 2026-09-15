@@ -11,7 +11,7 @@ echo براہ کرم چند سیکنڈ انتظار فرمائیں، ڈیسک ٹ
 echo.
 
 :: Define POS URL (کلاؤڈ سرور کا یو آر ایل)
-set "POS_URL=https://unaib-pos.onrender.com"
+set "POS_URL=https://gas-elliptic-mutate.ngrok-free.dev"
 set "SHORTCUT_NAME=Unaib Computer Accessories POS"
 set "DESKTOP_DIR=%USERPROFILE%\Desktop"
 set "EDGE_PATH=C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"

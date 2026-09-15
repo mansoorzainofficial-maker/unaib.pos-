@@ -54,6 +54,9 @@
   ],
   "author": "Unaib Computer Accessories",
   "license": "ISC",
+  "engines": {
+    "node": "22.x"
+  },
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.19.2",
