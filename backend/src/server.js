@@ -17,6 +17,9 @@ const ledgerRoutes = require('./routes/ledgerRoutes');
 const backupRoutes = require('./routes/backupRoutes');
 const printerRoutes = require('./routes/printerRoutes');
 const returnRoutes = require('./routes/returnRoutes');
+const supplierRoutes = require('./routes/supplierRoutes');
+const grnRoutes = require('./routes/grnRoutes');
+const accountRoutes = require('./routes/accountRoutes');
 const backupService = require('./services/backupService');
 
 const app = express();
@@ -65,6 +68,9 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/backups', backupRoutes);
 app.use('/api/printer', printerRoutes);
 app.use('/api/returns', returnRoutes);
+app.use('/api/suppliers', supplierRoutes);
+app.use('/api/grn', grnRoutes);
+app.use('/api/accounts', accountRoutes);
 
 // Graceful shutdown backup and unhandled errors protection
 let isShuttingDown = false;

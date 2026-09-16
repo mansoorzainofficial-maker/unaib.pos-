@@ -2,11 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { api } from '../services/api';
-import { ShieldCheck, User, LogOut, AlertTriangle, Clock, Store, DollarSign, Globe } from 'lucide-react';
+import { ShieldCheck, User, LogOut, AlertTriangle, Clock, Store, Globe } from 'lucide-react';
+import OnlineStatusIndicator from './OnlineStatusIndicator';
 
 export default function Navbar({ onOpenShiftModal, lowStockCount = 0 }) {
   const { user, logout, isAdmin } = useAuth();
-  const { lang, toggleLanguage, t, isUrdu, urduFont, toggleUrduFont } = useLanguage();
+  const { lang, toggleLanguage, t, isUrdu } = useLanguage();
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString());
   const [currentShift, setCurrentShift] = useState(null);
 
@@ -46,35 +47,26 @@ export default function Navbar({ onOpenShiftModal, lowStockCount = 0 }) {
 
       {/* Center Status Indicators & Language Toggle */}
       <div className="flex items-center space-x-2.5">
+        {/* Real-time Online / Offline Status Indicator */}
+        <OnlineStatusIndicator />
+
         {/* Language Switcher Pill */}
         <button
           type="button"
           onClick={toggleLanguage}
-          title="Switch Language / زبان تبدیل کریں"
+          title={isUrdu ? 'Switch to English' : 'اردو میں تبدیل کریں'}
           className="flex items-center space-x-1.5 px-3 py-1 rounded-full text-xs font-black border border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 shadow-xs transition-all cursor-pointer"
         >
           <Globe className="w-3.5 h-3.5 text-emerald-600" />
           <span>{isUrdu ? '🇵🇰 آسان اردو' : '🇬🇧 English'}</span>
         </button>
 
-        {/* Cash Drawer Status */}
-        <button
-          onClick={onOpenShiftModal}
-          className={`hidden md:flex items-center space-x-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all cursor-pointer ${
-            currentShift?.isOpen
-              ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
-              : 'bg-rose-50 border-rose-200 text-rose-700 hover:bg-rose-100'
-          }`}
-        >
-          <DollarSign className="w-3.5 h-3.5" />
-          <span>{currentShift?.isOpen ? (isUrdu ? 'دکان کا گلہ: کھلا ہے' : 'Drawer: Shift Open') : (isUrdu ? 'دکان کا گلہ: بند ہے' : 'Drawer: Closed')}</span>
-        </button>
 
         {/* Low Stock Warning Indicator */}
         {lowStockCount > 0 && (
           <div className="hidden lg:flex items-center space-x-1.5 bg-rose-50 border border-rose-200 text-rose-700 px-3 py-1.5 rounded-full text-xs font-semibold shadow-xs">
             <AlertTriangle className="w-3.5 h-3.5 text-rose-600" />
-            <span>{lowStockCount} {isUrdu ? 'کم اسٹاک الرٹ' : 'Low Stock'}</span>
+            <span>{lowStockCount} {t('low_stock_alert')}</span>
           </div>
         )}
 
@@ -94,14 +86,14 @@ export default function Navbar({ onOpenShiftModal, lowStockCount = 0 }) {
           <div className="text-left hidden sm:block">
             <div className="text-xs font-bold text-slate-800 leading-tight">{user?.full_name || user?.username}</div>
             <div className="text-[9px] uppercase font-semibold text-slate-400">
-              {user?.role === 'admin' ? (isUrdu ? 'مالک / ایڈمن' : 'Administrator') : (isUrdu ? 'کیشیئر / ملازم' : 'Cashier')}
+              {user?.role === 'admin' ? t('admin_role') : t('cashier_role')}
             </div>
           </div>
         </div>
 
         <button
           onClick={logout}
-          title={isUrdu ? 'لاگ آؤٹ / صارف تبدیل کریں' : 'Switch User / Logout'}
+          title={t('logout_btn')}
           className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-full transition-colors cursor-pointer border border-transparent hover:border-rose-200"
         >
           <LogOut className="w-4 h-4" />

@@ -227,9 +227,34 @@ function initDb() {
         unit_cost REAL NOT NULL,
         total_amount REAL NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS stock_alerts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        product_id INTEGER NOT NULL REFERENCES products(id),
+        product_name TEXT NOT NULL,
+        invoice_id INTEGER REFERENCES invoices(id) ON DELETE SET NULL,
+        invoice_number TEXT,
+        available_before REAL DEFAULT 0.0,
+        quantity_sold REAL NOT NULL DEFAULT 1,
+        quantity_oversold REAL NOT NULL DEFAULT 0.0,
+        status TEXT NOT NULL DEFAULT 'pending',
+        notes TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        resolved_at DATETIME,
+        resolved_by INTEGER REFERENCES users(id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_stock_alerts_status ON stock_alerts(status);
     `);
   } catch (retErr) {
-    console.warn('Returns schema migration warning:', retErr.message);
+    console.warn('Returns and stock_alerts schema migration warning:', retErr.message);
+  }
+
+  // Safe auto-migration: Ensure serial_numbers table has purchase_item_id for precise line-item serial mapping
+  try {
+    db.exec('ALTER TABLE serial_numbers ADD COLUMN purchase_item_id INTEGER REFERENCES purchase_items(id) ON DELETE SET NULL;');
+  } catch (snErr) {
+    // Column already exists or table not ready, safely ignore
   }
 }
 

@@ -63,9 +63,9 @@ function populateDatabase() {
       if (!existingLedger) {
         db.prepare(`
           INSERT INTO ledger_entries (
-            party_type, party_id, entry_type, reference_no, debit, credit, balance, description, entry_date
-          ) VALUES ('supplier', ?, 'opening_balance', 'OPN-SUP-${s.id}', 0, ?, ?, 'Opening Balance (Pichli Adaigi / Payable)', DATE('now', '-7 days'))
-        `).run(s.id, s.balance, s.balance);
+            party_type, party_id, entry_type, reference_no, debit, credit, description, entry_date
+          ) VALUES ('supplier', ?, 'opening_balance', 'OPN-SUP-${s.id}', 0, ?, 'Opening Balance (Pichli Adaigi / Payable)', DATE('now', '-7 days'))
+        `).run(s.id, s.balance);
       }
     });
 
@@ -101,9 +101,9 @@ function populateDatabase() {
       if (!existingLedger) {
         db.prepare(`
           INSERT INTO ledger_entries (
-            party_type, party_id, entry_type, reference_no, debit, credit, balance, description, entry_date
-          ) VALUES ('customer', ?, 'opening_balance', 'OPN-CUST-${c.id}', ?, 0, ?, 'Opening Balance (Pichla Udhar / Receivable)', DATE('now', '-7 days'))
-        `).run(c.id, c.balance, c.balance);
+            party_type, party_id, entry_type, reference_no, debit, credit, description, entry_date
+          ) VALUES ('customer', ?, 'opening_balance', 'OPN-CUST-${c.id}', ?, 0, 'Opening Balance (Pichla Udhar / Receivable)', DATE('now', '-7 days'))
+        `).run(c.id, c.balance);
       }
     });
 

@@ -20,9 +20,12 @@ import {
   Printer,
   Package,
   ShieldCheck,
-  Zap
+  Zap,
+  RefreshCw
 } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
+import { saveProductsCache, getCachedProducts, savePendingBill } from '../utils/indexedDB';
+import { syncManager } from '../utils/syncManager';
 
 export default function POSScreen({ onLowStockChange }) {
   const { t, isUrdu } = useLanguage();
@@ -109,25 +112,38 @@ export default function POSScreen({ onLowStockChange }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [fastSearch, setFastSearch] = useState('');
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  // Load products & categories on mount
+  // Load products & categories on mount + on window focus
   useEffect(() => {
     loadCatalog();
+    const handleFocus = () => {
+      loadCatalog();
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
   }, []);
 
   const loadCatalog = async () => {
     try {
       const [prodRes, catRes, lowRes, custRes, setRes] = await Promise.all([
         api.products.getAll(),
-        api.products.getCategories(),
-        api.products.getLowStockAlerts(),
+        api.products.getCategories().catch(() => ({ success: false, categories: [] })),
+        api.products.getLowStockAlerts().catch(() => ({ success: false, count: 0 })),
         api.invoices.getCustomers().catch(() => ({ success: false, customers: [] })),
         api.settings.get().catch(() => ({ success: false }))
       ]);
-      if (prodRes.success) setProducts(prodRes.products);
-      if (catRes.success) setCategories(catRes.categories);
+
+      if (prodRes?.success && Array.isArray(prodRes.products)) {
+        setProducts(prodRes.products);
+        // Requirement 1: Products ko IndexedDB mein cache karo
+        saveProductsCache(prodRes.products).catch(err => {
+          console.warn('Could not update products in IndexedDB cache:', err);
+        });
+      }
+      if (catRes?.success) setCategories(catRes.categories);
       if (custRes?.success) setCustomers(custRes.customers || []);
-      if (lowRes.success && onLowStockChange) {
+      if (lowRes?.success && onLowStockChange) {
         onLowStockChange(lowRes.count);
       }
       if (setRes?.success && setRes?.settings?.default_sales_tax_rate) {
@@ -138,7 +154,16 @@ export default function POSScreen({ onLowStockChange }) {
         }
       }
     } catch (err) {
-      console.error('Failed to load POS catalog:', err);
+      console.warn('Network issue fetching catalog. Loading from IndexedDB offline cache:', err);
+      try {
+        const cached = await getCachedProducts();
+        if (cached && cached.length > 0) {
+          setProducts(cached);
+          console.log(`Loaded ${cached.length} products from offline IndexedDB cache.`);
+        }
+      } catch (cacheErr) {
+        console.error('Failed to load products from IndexedDB:', cacheErr);
+      }
     }
   };
 
@@ -413,7 +438,7 @@ export default function POSScreen({ onLowStockChange }) {
     let finalCustomerId = null;
 
     if (customerMode === 'walkin') {
-      finalCustomerName = customerName.trim() || (balanceDue > 0 ? (isUrdu ? `واک ان ادھار گاہک (${new Date().toLocaleDateString('en-GB')})` : `Walk-in Udhar (${new Date().toLocaleDateString('en-GB')})`) : (isUrdu ? 'عام واک ان گاہک' : 'Walk-in Customer'));
+      finalCustomerName = customerName.trim() || (balanceDue > 0 ? (isUrdu ? `واک ان ادھار گاہک (${new Date().toLocaleDateString('en-GB')})` : `Walk-in Credit (${new Date().toLocaleDateString('en-GB')})`) : (isUrdu ? 'عام واک ان گاہک' : 'Walk-in Customer'));
       finalCustomerId = null;
     } else {
       // Registered Wholesale Party
@@ -422,7 +447,7 @@ export default function POSScreen({ onLowStockChange }) {
           finalCustomerName = customerName.trim();
           finalCustomerId = null;
         } else {
-          setErrorMsg(isUrdu ? 'براہ کرم رجسٹرڈ پارٹی منتخب کریں یا عام واک ان گاہک پر کلک کریں۔' : 'Baraye meherbani Registered Party select karein ya Walk-in Customer par click karein.');
+          setErrorMsg(t('select_party_err'));
           return;
         }
       } else {
@@ -434,6 +459,92 @@ export default function POSScreen({ onLowStockChange }) {
 
     setIsSubmitting(true);
     setErrorMsg('');
+
+    // -------------------------------------------------------------
+    // DUAL LOGIC: SAVE ONLINE / SAVE OFFLINE
+    // -------------------------------------------------------------
+
+    const saveOnline = async (payload) => {
+      const res = await api.invoices.create(payload);
+      if (res && res.success && res.invoice) {
+        setCompletedInvoice(res.invoice);
+        setIsCheckoutOpen(false);
+        clearCart();
+        loadCatalog(); // Refresh stocks & customer balances
+        return res.invoice;
+      } else {
+        throw new Error(res?.message || 'Transaction failed');
+      }
+    };
+
+    const saveOffline = async (payload, cartItems, custName) => {
+      // 1. Save bill in IndexedDB pending_bills store
+      const savedRecord = await savePendingBill(payload);
+
+      // 2. Format invoice matching ThermalReceipt structure for instant offline print
+      const offlineInvoice = {
+        id: savedRecord.local_id,
+        local_id: savedRecord.local_id,
+        invoice_number: savedRecord.invoice_number,
+        customer_id: payload.customer_id,
+        customer_name: custName,
+        customer_phone: payload.customer_phone,
+        items: cartItems.map(item => ({
+          product_id: item.product_id,
+          product_name: item.name,
+          quantity: item.quantity,
+          unit_price: item.sale_price,
+          total_price: (Number(item.sale_price) || 0) * (Number(item.quantity) || 1),
+          warranty_months: item.warranty_months || 0,
+          serial_numbers: item.serial_numbers || []
+        })),
+        subtotal,
+        discount_type: discountType,
+        discount_value: Number(discountValue) || 0,
+        discount_amount: discountAmount,
+        tax_rate: Number(taxRate) || 0,
+        tax_amount: taxAmount,
+        grand_total: grandTotal,
+        paid_amount: paidAmount,
+        change_amount: changeDue,
+        balance_due: balanceDue,
+        payment_method: paymentMethod,
+        notes: notes || '',
+        created_at: savedRecord.created_at,
+        is_offline: true
+      };
+
+      // 3. Decrement local product stock in UI so subsequent offline sales reflect reduced inventory
+      setProducts(prevProducts => {
+        const productQtyMap = new Map();
+        for (const it of cartItems) {
+          productQtyMap.set(it.product_id, (productQtyMap.get(it.product_id) || 0) + it.quantity);
+        }
+        return prevProducts.map(p => {
+          if (productQtyMap.has(p.id)) {
+            return {
+              ...p,
+              stock_quantity: (Number(p.stock_quantity) || 0) - productQtyMap.get(p.id)
+            };
+          }
+          return p;
+        });
+      });
+
+      // 4. Open Thermal Receipt Preview for printing
+      setCompletedInvoice(offlineInvoice);
+      setIsCheckoutOpen(false);
+      clearCart();
+
+      // 5. User Notification
+      setSuccessMsg(isUrdu
+        ? 'بل آف لائن محفوظ ہو گیا - انٹرنیٹ آنے پر خودکار سنک ہو جائے گا'
+        : 'Bill saved offline - will sync automatically when online'
+      );
+      setTimeout(() => setSuccessMsg(''), 6000);
+
+      return offlineInvoice;
+    };
 
     try {
       const payload = {
@@ -455,12 +566,23 @@ export default function POSScreen({ onLowStockChange }) {
         notes: notes
       };
 
-      const res = await api.invoices.create(payload);
-      if (res.success && res.invoice) {
-        setCompletedInvoice(res.invoice);
-        setIsCheckoutOpen(false);
-        clearCart();
-        loadCatalog(); // Refresh stocks & customer balances
+      const isNetworkOnline = syncManager.isOnline();
+
+      if (isNetworkOnline) {
+        try {
+          await saveOnline(payload);
+        } catch (onlineErr) {
+          // If network failed mid-request or server unreachable, fallback to offline save
+          if (!navigator.onLine || onlineErr.message?.includes('Failed to fetch') || onlineErr.message?.includes('NetworkError')) {
+            console.warn('Network failed during sale submission. Falling back to offline save:', onlineErr);
+            await saveOffline(payload, processedCart, finalCustomerName);
+          } else {
+            throw onlineErr;
+          }
+        }
+      } else {
+        // Offline: save to IndexedDB directly
+        await saveOffline(payload, processedCart, finalCustomerName);
       }
     } catch (err) {
       setErrorMsg(err.message || 'Transaction failed');
@@ -485,29 +607,47 @@ export default function POSScreen({ onLowStockChange }) {
         {/* Top Scanner, Fast Item Search & Customer Bar */}
         <div className="p-3 border-b border-slate-200 bg-white space-y-2.5">
           <div className="grid grid-cols-1 md:grid-cols-12 gap-2 items-center">
-            {/* 1. Barcode Scanner */}
-            <div className="md:col-span-6">
+            {/* 1. Barcode Scanner with subtle F2 badge */}
+            <div className="md:col-span-6 relative">
               <BarcodeScannerInput
                 onScan={handleBarcodeScan}
-                placeholder={isUrdu ? "بارکوڈ اسکین کریں (F2) یا کوڈ لکھ کر Enter دبائیں..." : "Scan Barcode (F2) or type barcode & press Enter..."}
+                placeholder={t('scan_placeholder')}
               />
+              <div className="absolute right-3 top-2.5 pointer-events-none">
+                <kbd className="text-[10px] font-mono font-semibold text-slate-400 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded shadow-2xs">
+                  F2
+                </kbd>
+              </div>
             </div>
 
             {/* 2. Fast Product Name Search with Live Dropdown */}
             <div className="md:col-span-6 relative">
-              <div className="relative">
-                <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder={isUrdu ? "سامان کا نام تلاش کریں (جیسے RAM, SSD, Mouse, Keyboard)..." : "Or search item by name (e.g. RAM, SSD, Mouse)..."}
-                  value={fastSearch}
-                  onFocus={() => setShowSearchDropdown(true)}
-                  onChange={(e) => {
-                    setFastSearch(e.target.value);
-                    setShowSearchDropdown(true);
+              <div className="flex items-center gap-1.5">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder={t('search_placeholder')}
+                    value={fastSearch}
+                    onFocus={() => setShowSearchDropdown(true)}
+                    onChange={(e) => {
+                      setFastSearch(e.target.value);
+                      setShowSearchDropdown(true);
+                    }}
+                    className="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-hidden"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsRefreshing(true);
+                    loadCatalog().finally(() => setTimeout(() => setIsRefreshing(false), 500));
                   }}
-                  className="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-hidden"
-                />
+                  title={isUrdu ? 'اسٹاک اور پراڈکٹس ری فریش کریں' : 'Refresh products & stock'}
+                  className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl transition-colors cursor-pointer shrink-0"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-emerald-600' : ''}`} />
+                </button>
               </div>
 
               {/* Fast Search Autocomplete Dropdown */}
@@ -534,7 +674,7 @@ export default function POSScreen({ onLowStockChange }) {
                           <div className="font-semibold text-xs text-slate-900">{item.name}</div>
                           <div className="text-[10px] text-slate-500 flex items-center gap-2">
                             {item.barcode && <span className="font-mono bg-slate-100 px-1 rounded">[{item.barcode}]</span>}
-                            <span>{isUrdu ? 'موجود اسٹاک:' : 'Stock:'} {item.stock_quantity}</span>
+                            <span>{t('stock_avail')} {item.stock_quantity}</span>
                           </div>
                         </div>
                         <div className="font-mono font-bold text-xs text-emerald-700">
@@ -554,9 +694,9 @@ export default function POSScreen({ onLowStockChange }) {
             <div className="flex items-center gap-2">
               <span className="text-base">⚡</span>
               <div>
-                <span className="font-bold">{isUrdu ? 'پچھلا ادھورا بل بحال ہو گیا:' : 'Pichla Adhoora Bill Recover Ho Gaya:'}</span>
+                <span className="font-bold">{t('recovered_bill_title')}</span>
                 <span className="text-slate-700 ml-1.5">
-                  {isUrdu ? 'بجلی جانے یا کمپیوٹر بند ہونے سے پہلے اسکین کیا گیا سامان محفوظ تھا اور واپس لا دیا گیا ہے۔' : 'Bijli jane ya app band hone se pehle scan kiye gaye items auto-save the aur wapis restore kar diye gaye hain.'}
+                  {t('recovered_bill_sub')}
                 </span>
               </div>
             </div>
@@ -565,7 +705,7 @@ export default function POSScreen({ onLowStockChange }) {
               onClick={() => setRecoveredNotice(false)}
               className="px-2.5 py-1 bg-amber-200 hover:bg-amber-300 rounded-lg text-amber-950 font-bold text-[11px] cursor-pointer transition-colors"
             >
-              {isUrdu ? 'ٹھیک ہے ✕' : 'Theek Hai ✕'}
+              {t('btn_ok')}
             </button>
           </div>
         )}
@@ -584,11 +724,11 @@ export default function POSScreen({ onLowStockChange }) {
             <span>{isUrdu ? `بل کا سامان (${cart.reduce((s, i) => s + i.quantity, 0)})` : `Bill Items (${cart.reduce((s, i) => s + i.quantity, 0)})`}</span>
             {customerMode === 'walkin' ? (
               <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-bold border border-emerald-300">
-                {isUrdu ? '💵 نقد فروخت' : '💵 Naqad Cash Deal'}
+                {t('cash_deal')}
               </span>
             ) : (
               <span className="text-[10px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded font-bold border border-blue-300">
-                {isUrdu ? '📋 ادھار کھاتہ بل' : '📋 Udhar Invoice Deal'}
+                {t('udhar_deal')}
               </span>
             )}
           </div>
@@ -597,10 +737,10 @@ export default function POSScreen({ onLowStockChange }) {
               type="button"
               onClick={clearCart}
               className="text-[11px] text-slate-500 hover:text-rose-600 font-semibold flex items-center gap-1 cursor-pointer transition-colors px-2 py-0.5 rounded hover:bg-rose-50"
-              title={isUrdu ? 'کارٹ خالی کریں' : 'Khali Karein / Naya Bill'}
+              title={t('clear_cart')}
             >
               <Trash2 className="w-3.5 h-3.5" />
-              <span>{isUrdu ? 'نیا بل (کارٹ خالی)' : 'Naya Bill (Clear)'}</span>
+              <span>{t('clear_cart_btn')}</span>
             </button>
           )}
         </div>
@@ -610,17 +750,17 @@ export default function POSScreen({ onLowStockChange }) {
           {cart.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-2">
               <Package className="w-12 h-12 text-slate-300" />
-              <p className="text-sm font-semibold text-slate-600">{isUrdu ? 'کارٹ ابھی خالی ہے' : 'Cart is empty'}</p>
-              <p className="text-xs text-slate-400">{isUrdu ? 'سامان شامل کرنے کے لیے اوپر بارکوڈ اسکین کریں یا نام لکھیں' : 'Scan a barcode or search any product from the top bar'}</p>
+              <p className="text-sm font-semibold text-slate-600">{t('cart_empty_title')}</p>
+              <p className="text-xs text-slate-400">{t('cart_empty_sub')}</p>
             </div>
           ) : (
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-50 text-slate-700 font-bold uppercase tracking-wider text-[10px] border-b border-slate-200">
                 <tr>
-                  <th className="py-2.5 pl-3">{isUrdu ? 'سامان کی تفصیل' : 'Item Description'}</th>
-                  <th className="py-2.5 text-center w-28">{isUrdu ? 'تعداد' : 'Qty'}</th>
-                  <th className="py-2.5 text-right w-24">{isUrdu ? 'ریٹ' : 'Price'}</th>
-                  <th className="py-2.5 text-right w-24">{isUrdu ? 'ٹوٹل' : 'Total'}</th>
+                  <th className="py-2.5 pl-3">{t('col_item')}</th>
+                  <th className="py-2.5 text-center w-28">{t('col_qty')}</th>
+                  <th className="py-2.5 text-right w-24">{t('col_price')}</th>
+                  <th className="py-2.5 text-right w-24">{t('col_total')}</th>
                   <th className="py-2.5 pr-3 text-center w-10"></th>
                 </tr>
               </thead>
@@ -713,24 +853,23 @@ export default function POSScreen({ onLowStockChange }) {
 
         {/* Bottom Totals & Instant Checkout Bar */}
         <div className="p-4 border-t border-slate-200 bg-white shadow-lg space-y-3">
-          {/* Quick Discount & Tax Bar */}
-          <div className="flex items-center justify-between gap-3 text-xs">
+          {/* Quick Discount & Tax Bar - Clean and Compact */}
+          <div className="flex flex-wrap items-center justify-between gap-3 text-xs bg-slate-50 p-2.5 rounded-xl border border-slate-200">
             <div className="flex items-center space-x-2">
-              <Tag className="w-4 h-4 text-slate-500" />
-              <Tag className="w-4 h-4 text-slate-500" />
-              <span className="text-slate-600 font-medium">{isUrdu ? 'رعایت / ڈسکاؤنٹ:' : 'Discount:'}</span>
+              <Tag className="w-3.5 h-3.5 text-slate-500" />
+              <span className="text-slate-600 font-bold">{t('discount')}</span>
               <input
                 type="number"
                 min="0"
                 value={discountValue || ''}
                 placeholder="0"
                 onChange={(e) => setDiscountValue(Number(e.target.value))}
-                className="w-20 px-2 py-1 bg-white border border-slate-300 rounded text-right font-mono text-slate-900 focus:border-emerald-500 focus:outline-hidden"
+                className="w-20 px-2 py-1 bg-white border border-slate-300 rounded-lg text-right font-mono text-slate-900 focus:border-emerald-500 focus:outline-hidden"
               />
               <select
                 value={discountType}
                 onChange={(e) => setDiscountType(e.target.value)}
-                className="bg-white border border-slate-300 text-slate-700 rounded px-1.5 py-1 text-xs focus:outline-hidden"
+                className="bg-white border border-slate-300 text-slate-700 rounded-lg px-2 py-1 text-xs focus:outline-hidden"
               >
                 <option value="amount">Rs.</option>
                 <option value="percentage">%</option>
@@ -738,16 +877,16 @@ export default function POSScreen({ onLowStockChange }) {
             </div>
 
             <div className="flex items-center space-x-2">
-              <span className="text-slate-600 font-medium">{isUrdu ? 'سیلز ٹیکس:' : 'Tax:'}</span>
+              <span className="text-slate-600 font-bold">{t('tax')}</span>
               <input
                 type="number"
                 min="0"
                 value={taxRate || ''}
                 placeholder="0"
                 onChange={(e) => setTaxRate(Number(e.target.value))}
-                className="w-14 px-2 py-1 bg-white border border-slate-300 rounded text-right font-mono text-slate-900 focus:border-emerald-500 focus:outline-hidden"
+                className="w-16 px-2 py-1 bg-white border border-slate-300 rounded-lg text-right font-mono text-slate-900 focus:border-emerald-500 focus:outline-hidden"
               />
-              <span className="text-slate-600 font-medium">%</span>
+              <span className="text-slate-500 font-semibold">%</span>
             </div>
           </div>
 
@@ -755,22 +894,22 @@ export default function POSScreen({ onLowStockChange }) {
           <div className="flex items-end justify-between pt-2 border-t border-slate-200">
             <div>
               <div className="text-xs text-slate-600">
-                <span>{isUrdu ? 'سامان کا ٹوٹل:' : 'Subtotal:'} </span><span className="font-mono font-semibold text-slate-800">Rs. {subtotal.toLocaleString()}</span>
+                <span>{t('subtotal')} </span><span className="font-mono font-semibold text-slate-800">Rs. {subtotal.toLocaleString()}</span>
                 {discountAmount > 0 && <span className="ml-2 text-rose-600 font-mono font-medium">(-Rs. {discountAmount.toLocaleString()})</span>}
                 {taxAmount > 0 && <span className="ml-2 text-amber-800 font-mono font-bold">(+Tax {taxRate}%: Rs. {taxAmount.toLocaleString()})</span>}
               </div>
-              <div className="text-xs text-slate-500">{isUrdu ? `کل سامان کی تعداد: ${cart.reduce((s, i) => s + i.quantity, 0)}` : `Items Count: ${cart.reduce((s, i) => s + i.quantity, 0)}`}</div>
+              <div className="text-xs text-slate-500">{t('items_count')} {cart.reduce((s, i) => s + i.quantity, 0)}</div>
             </div>
 
             <div className="text-right">
-              <div className="text-[11px] uppercase tracking-wider text-slate-500 font-bold">{isUrdu ? 'کل بل رقم (Grand Total)' : 'Grand Total'}</div>
+              <div className="text-[11px] uppercase tracking-wider text-slate-500 font-bold">{t('grand_total')}</div>
               <div className="text-3xl font-black font-mono text-emerald-600 tracking-tight">
                 Rs. {grandTotal.toLocaleString()}
               </div>
             </div>
           </div>
 
-          {/* Proceed to Payment Trigger Button - Opens Separate Payment & Billing Window */}
+          {/* Proceed to Payment Trigger Button - Clean Single Language with Subtle F4 Badge */}
           <button
             onClick={() => {
               setErrorMsg('');
@@ -778,10 +917,13 @@ export default function POSScreen({ onLowStockChange }) {
             }}
             disabled={cart.length === 0}
             className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black rounded-xl shadow-lg shadow-emerald-600/25 flex items-center justify-center space-x-2 text-sm transition-all cursor-pointer"
-            title={isUrdu ? "بل کی ادائیگی و وصولی ونڈو کھولیں (F4)" : "Open Separate Payment & Billing Window (F4)"}
+            title={t('proceed_to_payment')}
           >
             <CheckCircle className="w-5 h-5" />
-            <span>{isUrdu ? '⚡ بل بنائیں اور رقم وصول کریں (F4)' : '⚡ Proceed to Payment / Bill Banayein (F4)'}</span>
+            <span>{t('proceed_to_payment')}</span>
+            <kbd className="ml-2 text-[10px] bg-emerald-800/40 text-emerald-200 border border-emerald-500/30 px-1.5 py-0.5 rounded font-mono font-bold uppercase tracking-wider">
+              F4
+            </kbd>
           </button>
         </div>
       </div>
@@ -793,14 +935,14 @@ export default function POSScreen({ onLowStockChange }) {
       <Modal
         isOpen={isCheckoutOpen}
         onClose={() => setIsCheckoutOpen(false)}
-        title={isUrdu ? "بل کی ادائیگی و رقم وصولی کاؤنٹر (Checkout Window)" : "Payment & Customer Invoicing (Raqam Wasooli Window)"}
+        title={t('payment_modal_title')}
         maxWidth="max-w-xl"
       >
         <div className="space-y-4">
           {/* Total Summary Header Card */}
           <div className="bg-slate-900 text-white p-4 rounded-2xl flex items-center justify-between shadow-lg">
             <div>
-              <div className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">{isUrdu ? 'کل بل رقم' : 'Total Bill Amount'}</div>
+              <div className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">{t('grand_total')}</div>
               <div className="text-3xl font-black font-mono text-emerald-400 tracking-tight">
                 Rs. {grandTotal.toLocaleString()}
               </div>
@@ -814,7 +956,7 @@ export default function POSScreen({ onLowStockChange }) {
 
           {/* Payment Mode Selector Tabs */}
           <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">{isUrdu ? 'ادائیگی کا طریقہ منتخب کریں:' : 'Payment Ka Tariqa (Select Option):'}</label>
+            <label className="block text-xs font-bold text-slate-700 mb-1.5">{t('payment_method_label')}</label>
             <div className="grid grid-cols-3 gap-2 bg-slate-100 p-1.5 rounded-xl border border-slate-200">
               <button
                 type="button"
@@ -834,7 +976,7 @@ export default function POSScreen({ onLowStockChange }) {
                 }`}
               >
                 <Banknote className="w-4 h-4" />
-                <span>{isUrdu ? '💵 نقد وصولی (Cash)' : '💵 Naqad (Cash)'}</span>
+                <span>{t('tab_cash')}</span>
               </button>
 
               <button
@@ -851,7 +993,7 @@ export default function POSScreen({ onLowStockChange }) {
                 }`}
               >
                 <Building2 className="w-4 h-4" />
-                <span>{isUrdu ? '📋 ادھار کھاتہ (Khata)' : '📋 Udhar (Khata)'}</span>
+                <span>{t('tab_udhar')}</span>
               </button>
 
               <button
@@ -872,7 +1014,7 @@ export default function POSScreen({ onLowStockChange }) {
                 }`}
               >
                 <CreditCard className="w-4 h-4" />
-                <span>{isUrdu ? '💳 کارڈ یا بینک' : '💳 Card / Bank'}</span>
+                <span>{t('tab_bank')}</span>
               </button>
             </div>
           </div>
@@ -883,10 +1025,10 @@ export default function POSScreen({ onLowStockChange }) {
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
                   <Banknote className="w-4 h-4 text-emerald-700" />
-                  <span>{isUrdu ? 'وصول شدہ رقم (گاہک نے کتنے دیے):' : 'Cash Wasool (Tendered Amount):'}</span>
+                  <span>{t('cash_tendered_label')}</span>
                 </span>
                 <span className="text-[11px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200">
-                  {isUrdu ? 'کاؤنٹر نقد سیل' : 'Walk-in Retail Cash'}
+                  {isUrdu ? 'کاؤنٹر نقد سیل' : 'Walk-in Retail'}
                 </span>
               </div>
 
@@ -895,7 +1037,7 @@ export default function POSScreen({ onLowStockChange }) {
                 <input
                   type="number"
                   min="0"
-                  placeholder={isUrdu ? "کتنے روپے وصول ہوئے..." : "Kitne rupay wasool huay..."}
+                  placeholder={isUrdu ? "کتنے روپے وصول ہوئے..." : "Enter received amount..."}
                   value={tenderedCash}
                   onChange={(e) => setTenderedCash(e.target.value)}
                   className="flex-1 px-3 py-2 bg-white border border-emerald-300 rounded-xl text-lg font-mono font-bold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
@@ -905,7 +1047,7 @@ export default function POSScreen({ onLowStockChange }) {
                   onClick={() => setTenderedCash(grandTotal.toString())}
                   className="px-3 py-2 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 rounded-xl text-xs font-bold border border-emerald-300 cursor-pointer"
                 >
-                  {isUrdu ? 'پورے پیسے' : 'Exact Cash'}
+                  {t('exact_cash_btn')}
                 </button>
               </div>
 
@@ -925,7 +1067,7 @@ export default function POSScreen({ onLowStockChange }) {
 
               {/* Real-time Baqaya Wapis / Change */}
               <div className="flex items-center justify-between p-2 bg-white rounded-lg border border-emerald-200">
-                <span className="text-xs font-bold text-slate-700">{isUrdu ? 'بقایا رقم گاہک کو واپس دیں:' : 'Baqaya Wapis (Change):'}</span>
+                <span className="text-xs font-bold text-slate-700">{t('change_due_label')}</span>
                 {changeDue > 0 ? (
                   <span className="text-base font-black font-mono text-emerald-700">
                     Rs. {changeDue.toLocaleString()}
@@ -933,9 +1075,9 @@ export default function POSScreen({ onLowStockChange }) {
                 ) : (
                   <span className="text-xs font-bold font-mono text-slate-500">
                     {tenderedCash && Number(tenderedCash) < grandTotal ? (
-                      <span className="text-amber-700">{isUrdu ? 'کم رقم:' : 'Kam Raqam:'} Rs. {(grandTotal - Number(tenderedCash)).toLocaleString()}</span>
+                      <span className="text-amber-700">{t('short_amount_label')} Rs. {(grandTotal - Number(tenderedCash)).toLocaleString()}</span>
                     ) : (
-                      isUrdu ? 'Rs. 0 (پورا حساب)' : 'Rs. 0 (Poora Hisab)'
+                      `Rs. 0 (${t('full_settled_label')})`
                     )}
                   </span>
                 )}
@@ -943,7 +1085,7 @@ export default function POSScreen({ onLowStockChange }) {
 
               {/* Optional Customer Name & WhatsApp Phone */}
               <div className="pt-2 border-t border-emerald-200/80">
-                <div className="text-[11px] font-semibold text-slate-600 mb-1">{isUrdu ? 'گاہک کی تفصیل (اختیاری - واٹس ایپ پرچی کے لیے):' : 'Customer Details (Optional, WhatsApp Parchi ke liye):'}</div>
+                <div className="text-[11px] font-semibold text-slate-600 mb-1">{t('cust_name_optional')}</div>
                 <div className="grid grid-cols-2 gap-2">
                   <input
                     type="text"
@@ -970,10 +1112,10 @@ export default function POSScreen({ onLowStockChange }) {
               <div className="flex items-center justify-between">
                 <span className="text-xs font-bold text-blue-950 flex items-center gap-1.5">
                   <Building2 className="w-4 h-4 text-blue-700" />
-                  <span>{isUrdu ? 'ہول سیل پارٹی کھاتہ بل:' : 'Wholesale Party Khata Invoice:'}</span>
+                  <span>{t('wholesale_heading')}</span>
                 </span>
                 <span className="text-[11px] font-bold text-blue-800 bg-blue-100 px-2 py-0.5 rounded border border-blue-200">
-                  {isUrdu ? 'ادھار بل' : 'Credit / Udhar Sale'}
+                  {t('credit_sale_badge')}
                 </span>
               </div>
 
@@ -981,7 +1123,7 @@ export default function POSScreen({ onLowStockChange }) {
               <div className="relative">
                 <input
                   type="text"
-                  placeholder={isUrdu ? "پارٹی کا نام یا موبائل نمبر تلاش کریں..." : "Select or search wholesale party..."}
+                  placeholder={t('select_party_placeholder')}
                   value={partySearchQuery}
                   onChange={(e) => {
                     setPartySearchQuery(e.target.value);
@@ -1033,7 +1175,7 @@ export default function POSScreen({ onLowStockChange }) {
                           </div>
                           <div className="text-right">
                             <span className={`text-[11px] font-mono font-bold ${cust.current_balance > 0 ? 'text-amber-700' : 'text-slate-500'}`}>
-                              {isUrdu ? 'کھاتہ:' : 'Khata:'} Rs. {Number(cust.current_balance || 0).toLocaleString()}
+                              {t('party_khata_label')} Rs. {Number(cust.current_balance || 0).toLocaleString()}
                             </span>
                           </div>
                         </button>
@@ -1046,15 +1188,15 @@ export default function POSScreen({ onLowStockChange }) {
               <div className="bg-white p-2.5 rounded-xl border border-blue-200 space-y-2">
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <div className="text-xs font-bold text-slate-800">{isUrdu ? 'وصول ہوئی رقم (Cash Paid Now):' : 'Wasool Hui Raqam (Cash Paid Now):'}</div>
-                    <div className="text-[10px] text-slate-500">{isUrdu ? 'پارٹی نے ابھی کاؤنٹر پر کتنے پیسے جمع کروائے (20k, 30k وغیرہ)' : 'Party ne counter par kitne rupay diye (Custom ya Quick Select)'}</div>
+                    <div className="text-xs font-bold text-slate-800">{t('cash_paid_now')}</div>
+                    <div className="text-[10px] text-slate-500">{t('cash_paid_sub')}</div>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <span className="text-xs font-bold text-slate-500 font-mono">Rs.</span>
                     <input
                       type="number"
                       min="0"
-                      placeholder={isUrdu ? "0 (پورا ادھار)" : "0 (Poora Udhar)"}
+                      placeholder={t('poora_udhar')}
                       value={tenderedCash}
                       onChange={(e) => setTenderedCash(e.target.value)}
                       className="w-36 px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-sm font-mono font-bold text-right text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
@@ -1064,7 +1206,7 @@ export default function POSScreen({ onLowStockChange }) {
 
                 {/* Quick Preset Buttons: 0 (Udhar), 5k, 10k, 20k, 30k, 50k, Half, Full Bill */}
                 <div className="flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-slate-100">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-0.5">{isUrdu ? 'فوری رقم:' : 'Quick:'}</span>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-0.5">{t('quick_select')}</span>
                   <button
                     type="button"
                     onClick={() => setTenderedCash('0')}
@@ -1074,7 +1216,7 @@ export default function POSScreen({ onLowStockChange }) {
                         : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
                     }`}
                   >
-                    {isUrdu ? '0 (پورا ادھار)' : '0 (Poora Udhar)'}
+                    {t('poora_udhar')}
                   </button>
                   <button
                     type="button"
@@ -1136,14 +1278,14 @@ export default function POSScreen({ onLowStockChange }) {
                     onClick={() => setTenderedCash(String(Math.round(grandTotal / 2)))}
                     className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-md text-[11px] font-bold cursor-pointer"
                   >
-                    {isUrdu ? '50% آدھا' : '50% Half'}
+                    {t('half_50')}
                   </button>
                   <button
                     type="button"
                     onClick={() => setTenderedCash(String(grandTotal))}
                     className="px-2 py-1 bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-300 rounded-md text-[11px] font-bold cursor-pointer"
                   >
-                    {isUrdu ? 'پورا بل' : 'Full Bill'}
+                    {t('full_bill')}
                   </button>
                 </div>
               </div>
@@ -1151,14 +1293,14 @@ export default function POSScreen({ onLowStockChange }) {
               {/* Khata Summary Breakdown */}
               <div className="bg-amber-50/80 p-3 rounded-xl border border-amber-200 space-y-1.5 text-xs">
                 <div className="flex justify-between text-slate-700">
-                  <span>{isUrdu ? 'پچھلا کھاتہ بقایا:' : 'Pichla Khata Baqaya:'}</span>
+                  <span>{t('prev_khata_label')}</span>
                   <span className="font-mono font-bold">
                     Rs. {Number(selectedParty?.current_balance || 0).toLocaleString()}
                   </span>
                 </div>
 
                 <div className="flex justify-between text-slate-700">
-                  <span>{isUrdu ? 'اس بل کا نیا مال:' : 'Naya Maal (Is Bill Ka Total):'}</span>
+                  <span>{t('curr_bill_label')}</span>
                   <span className="font-mono font-bold">
                     + Rs. {grandTotal.toLocaleString()}
                   </span>
@@ -1166,7 +1308,7 @@ export default function POSScreen({ onLowStockChange }) {
 
                 {paidAmount > 0 && (
                   <div className="flex justify-between text-slate-700">
-                    <span>{isUrdu ? 'وصول ہوئی رقم (Cash Paid):' : 'Wasool Hui Raqam (Cash Paid):'}</span>
+                    <span>{t('amount_received')}</span>
                     <span className="font-mono font-bold text-emerald-700">
                       - Rs. {paidAmount.toLocaleString()}
                     </span>
@@ -1175,14 +1317,14 @@ export default function POSScreen({ onLowStockChange }) {
 
                 {paidAmount > grandTotal ? (
                   <div className="flex justify-between text-emerald-900 bg-emerald-100/90 border border-emerald-300 px-2 py-1 rounded-lg font-bold">
-                    <span>{isUrdu ? 'اضافی رقم (پچھلے کھاتے سے کٹوتی):' : 'Extra Raqam (Pichle Khate se Minus):'}</span>
+                    <span>{t('extra_deduction_label')}</span>
                     <span className="font-mono">
                       - Rs. {(paidAmount - grandTotal).toLocaleString()}
                     </span>
                   </div>
                 ) : (
                   <div className="flex justify-between text-slate-700">
-                    <span>{isUrdu ? 'اس بل کا نیا ادھار:' : 'Is Bill Ka Naya Udhar:'}</span>
+                    <span>{t('bill_balance_label')}</span>
                     <span className="font-mono font-bold text-amber-900">
                       + Rs. {balanceDue.toLocaleString()}
                     </span>
@@ -1190,7 +1332,7 @@ export default function POSScreen({ onLowStockChange }) {
                 )}
 
                 <div className="flex justify-between pt-1.5 border-t border-amber-300 font-bold text-amber-950">
-                  <span>{isUrdu ? 'کل نیا کھاتہ بقایا:' : 'Kul Naya Khata Baqaya:'}</span>
+                  <span>{t('net_new_khata')}</span>
                   <span className="font-mono text-sm">
                     Rs. {Math.round(Number(selectedParty?.current_balance || 0) + grandTotal - paidAmount).toLocaleString()}
                   </span>
@@ -1202,7 +1344,7 @@ export default function POSScreen({ onLowStockChange }) {
           {/* 3. CARD / ONLINE BANK MODE */}
           {(paymentMethod === 'card' || paymentMethod === 'online') && customerMode === 'walkin' && (
             <div className="space-y-3 bg-indigo-50/50 p-3.5 rounded-xl border border-indigo-200">
-              <div className="text-xs font-bold text-indigo-950">{isUrdu ? 'کارڈ یا بینک ٹرانسفر کی تفصیل:' : 'Card ya Bank Transfer Details:'}</div>
+              <div className="text-xs font-bold text-indigo-950">{t('card_bank_details')}</div>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
@@ -1214,7 +1356,7 @@ export default function POSScreen({ onLowStockChange }) {
                   }`}
                 >
                   <CreditCard className="w-4 h-4" />
-                  <span>{isUrdu ? 'کارڈ / POS مشین' : 'Card / POS Machine'}</span>
+                  <span>{t('card_pos_machine')}</span>
                 </button>
                 <button
                   type="button"
@@ -1226,14 +1368,14 @@ export default function POSScreen({ onLowStockChange }) {
                   }`}
                 >
                   <Smartphone className="w-4 h-4" />
-                  <span>{isUrdu ? 'آن لائن / بینک / UPI' : 'Online / Bank / UPI'}</span>
+                  <span>{t('online_bank_upi')}</span>
                 </button>
               </div>
 
               <div>
                 <input
                   type="text"
-                  placeholder={isUrdu ? "کارڈ کے آخری 4 ہندسے یا ٹرانزیکشن ID (اختیاری)..." : "Card Last 4 digits ya Bank Transaction ID (Optional)..."}
+                  placeholder={t('card_ref_placeholder')}
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
                   className="w-full px-3 py-2 bg-white border border-indigo-200 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-hidden focus:border-indigo-500"
@@ -1263,7 +1405,7 @@ export default function POSScreen({ onLowStockChange }) {
               onClick={() => setIsCheckoutOpen(false)}
               className="w-36 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold transition-colors cursor-pointer"
             >
-              {isUrdu ? 'منسوخ (واپس)' : 'Cancel (Wapis)'}
+              {t('cancel_btn')}
             </button>
 
             {customerMode === 'party' ? (
@@ -1274,7 +1416,7 @@ export default function POSScreen({ onLowStockChange }) {
                 className="flex-1 py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black rounded-xl shadow-lg shadow-blue-600/20 text-xs flex items-center justify-center space-x-2 transition-all cursor-pointer"
               >
                 <Printer className="w-4 h-4" />
-                <span>{isSubmitting ? (isUrdu ? 'کھاتے میں درج ہو رہا ہے...' : 'Khate me Darj Ho Raha Hai...') : (isUrdu ? '📝 ادھار بل محفوظ کریں اور کھاتے میں ڈالیں' : '📝 Udhar Invoice Save & Print (Khata)')}</span>
+                <span>{isSubmitting ? t('saving_udhar') : t('save_udhar_invoice')}</span>
               </button>
             ) : (
               <button
@@ -1284,7 +1426,7 @@ export default function POSScreen({ onLowStockChange }) {
                 className="flex-1 py-3 px-4 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black rounded-xl shadow-lg shadow-emerald-600/20 text-xs flex items-center justify-center space-x-2 transition-all cursor-pointer"
               >
                 <Printer className="w-4 h-4" />
-                <span>{isSubmitting ? (isUrdu ? 'بل مکمل ہو رہا ہے...' : 'Sale Complete Ho Rahi Hai...') : (isUrdu ? '⚡ نقد سیل مکمل کریں اور پرچی پرنٹ کریں' : '⚡ Naqad Sale Complete & Print Parchi')}</span>
+                <span>{isSubmitting ? t('saving_sale') : t('complete_cash_sale')}</span>
               </button>
             )}
           </div>

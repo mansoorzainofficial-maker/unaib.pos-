@@ -58,6 +58,8 @@ export default function InventoryScreen({ onLowStockChange }) {
   const [isAddSerialsOpen, setIsAddSerialsOpen] = useState(false);
   const [targetProductForSerials, setTargetProductForSerials] = useState(null);
   const [serialsText, setSerialsText] = useState('');
+  const [oversoldAlerts, setOversoldAlerts] = useState([]);
+  const [resolvingAlertId, setResolvingAlertId] = useState(null);
 
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -69,11 +71,12 @@ export default function InventoryScreen({ onLowStockChange }) {
   const loadData = async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const [prodRes, catRes, supRes, lowRes] = await Promise.all([
+      const [prodRes, catRes, supRes, lowRes, alertRes] = await Promise.all([
         api.products.getAll(),
         api.products.getCategories(),
         api.products.getSuppliers(),
-        api.products.getLowStockAlerts()
+        api.products.getLowStockAlerts(),
+        api.products.getOversoldAlerts('pending').catch(() => ({ success: false, alerts: [] }))
       ]);
 
       if (prodRes.success) setProducts(prodRes.products || []);
@@ -82,10 +85,29 @@ export default function InventoryScreen({ onLowStockChange }) {
       if (lowRes.success && onLowStockChange) {
         onLowStockChange(lowRes.count);
       }
+      if (alertRes?.success) {
+        setOversoldAlerts(alertRes.alerts || []);
+      }
     } catch (err) {
       setErrorMsg(err.message || 'Failed to load inventory data');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResolveAlert = async (alertId) => {
+    setResolvingAlertId(alertId);
+    try {
+      const res = await api.products.resolveOversoldAlert(alertId, 'Resolved from Inventory Dashboard');
+      if (res && res.success) {
+        setOversoldAlerts(prev => prev.filter(a => a.id !== alertId));
+        setSuccessMsg(isUrdu ? 'اسٹاک الرٹ کامیابی سے حل شدہ مارک ہو گیا۔' : 'Stock alert marked as resolved.');
+        setTimeout(() => setSuccessMsg(''), 4000);
+      }
+    } catch (err) {
+      setErrorMsg(err.message || 'Failed to resolve alert');
+    } finally {
+      setResolvingAlertId(null);
     }
   };
 
@@ -391,6 +413,63 @@ export default function InventoryScreen({ onLowStockChange }) {
           </div>
         </div>
       </div>
+
+      {/* OVERSOLD STOCK ALERTS DASHBOARD SECTION (Always visible until resolved) */}
+      {oversoldAlerts.length > 0 && (
+        <div className="bg-rose-50/90 border-2 border-rose-300 rounded-2xl p-4 shadow-sm shrink-0">
+          <div className="flex items-center justify-between pb-2.5 border-b border-rose-200 mb-3">
+            <div className="flex items-center space-x-2.5">
+              <div className="w-8 h-8 rounded-xl bg-rose-600 text-white flex items-center justify-center font-black shadow-xs">
+                <AlertTriangle className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-xs font-black text-rose-950 uppercase tracking-wide flex items-center gap-2">
+                  <span>{isUrdu ? '⚠️ اسٹاک الرٹس — منفی و زائد فروخت شدہ سامان' : '⚠️ Stock Alerts — Oversold Items'}</span>
+                  <span className="bg-rose-600 text-white px-2 py-0.5 rounded-full text-[10px] font-mono font-bold">
+                    {oversoldAlerts.length} {isUrdu ? 'حل طلب الرٹس' : 'Pending'}
+                  </span>
+                </h3>
+                <p className="text-[11px] text-rose-800 font-medium">
+                  {isUrdu
+                    ? 'آف لائن بلنگ کے دوران یہ اشیاء دستیاب اسٹاک سے زیادہ فروخت ہوئیں۔ برائے مہربانی دکان کا فزیکل اسٹاک چیک کریں اور مسئلہ حل ہونے پر نشان لگائیں۔'
+                    : 'These items were oversold while offline. Please verify physical shop stock and mark as resolved.'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+            {oversoldAlerts.map(item => (
+              <div key={item.id} className="bg-white p-3.5 rounded-xl border border-rose-200 shadow-xs flex flex-col justify-between">
+                <div>
+                  <div className="font-bold text-xs text-slate-900 leading-tight">{item.product_name}</div>
+                  <div className="text-[10px] text-slate-500 font-mono mt-1 flex items-center gap-2">
+                    <span>بل: {item.invoice_number}</span>
+                    <span>|</span>
+                    <span>فروخت: {item.quantity_sold}</span>
+                  </div>
+                  <div className="text-xs font-black text-rose-700 mt-1.5 flex items-center gap-1.5">
+                    <span className="px-1.5 py-0.5 rounded bg-rose-100 border border-rose-200 font-mono">
+                      -{item.quantity_oversold} عدد منفی
+                    </span>
+                    <span className="text-[10px] text-slate-500 font-normal">
+                      (موجودہ اسٹاک: {item.current_stock})
+                    </span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => handleResolveAlert(item.id)}
+                  disabled={resolvingAlertId === item.id}
+                  className="mt-3 w-full py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs transition-colors cursor-pointer disabled:opacity-50 shadow-xs"
+                >
+                  {resolvingAlertId === item.id ? 'حل ہو رہا ہے...' : (isUrdu ? '✓ اسٹاک درست ہو گیا (Mark Resolved)' : '✓ Mark Resolved')}
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Unified White Card Container for Search, Filters & Catalog Table */}
       <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-xs flex-1 flex flex-col min-h-0 space-y-3">

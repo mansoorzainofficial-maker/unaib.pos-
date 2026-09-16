@@ -13,17 +13,26 @@ function calculateShiftCashFlow(cashierId, openedAt, openingCash = 0) {
       AND created_at >= ?
   `, [openedAt]);
 
-  // 2. Customer Khata Recoveries in Cash (Receivable debt payments collected)
+  // 2. Customer Khata Recoveries in Cash (entry_type = 'payment' or 'payment_received', account type = 'cash')
   const customerRecoveryRow = get(`
-    SELECT COALESCE(SUM(credit), 0) as cash_from_recoveries
-    FROM ledger_entries
-    WHERE party_type = 'customer'
-      AND entry_type = 'payment_received'
-      AND payment_method = 'cash'
+    SELECT COALESCE(SUM(le.credit), 0) as cash_from_recoveries
+    FROM ledger_entries le
+    JOIN accounts a ON le.account_id = a.id
+    WHERE le.party_type IN ('client', 'customer')
+      AND le.entry_type IN ('payment', 'payment_received')
+      AND a.type = 'cash'
+      AND le.created_at >= ?
+  `, [openedAt]);
+
+  // 3. Purchase Returns cash received into drawer (Inflow)
+  const purchaseReturnRow = get(`
+    SELECT COALESCE(SUM(total_amount), 0) as cash_from_purchase_returns
+    FROM purchase_returns
+    WHERE refund_mode = 'cash'
       AND created_at >= ?
   `, [openedAt]);
 
-  // 3. Shop Operational Expenses paid in Cash
+  // 4. Shop Operational Expenses paid in Cash (Outflow)
   const expenseRow = get(`
     SELECT COALESCE(SUM(amount), 0) as cash_to_expenses
     FROM expenses
@@ -31,7 +40,7 @@ function calculateShiftCashFlow(cashierId, openedAt, openingCash = 0) {
       AND created_at >= ?
   `, [openedAt]);
 
-  // 4. Supplier Purchases paid in Cash (Stock Inward orders)
+  // 5. Supplier Purchases paid in Cash (Outflow)
   const purchaseRow = get(`
     SELECT COALESCE(SUM(paid_amount), 0) as cash_to_purchases
     FROM purchases
@@ -40,24 +49,35 @@ function calculateShiftCashFlow(cashierId, openedAt, openingCash = 0) {
       AND created_at >= ?
   `, [openedAt]);
 
-  // 5. Supplier Ledger Payments made in Cash (Paying vendor debt from drawer)
+  // 6. Supplier Ledger Payments made in Cash (Outflow)
   const supplierPaymentRow = get(`
-    SELECT COALESCE(SUM(debit), 0) as cash_to_suppliers
-    FROM ledger_entries
-    WHERE party_type = 'supplier'
-      AND entry_type = 'payment_made'
-      AND payment_method = 'cash'
+    SELECT COALESCE(SUM(CASE WHEN le.credit > 0 THEN le.credit ELSE le.debit END), 0) as cash_to_suppliers
+    FROM ledger_entries le
+    JOIN accounts a ON le.account_id = a.id
+    WHERE le.party_type = 'supplier'
+      AND le.entry_type IN ('payment', 'payment_made')
+      AND a.type = 'cash'
+      AND le.created_at >= ?
+  `, [openedAt]);
+
+  // 7. Sale Returns cash refunded to customer (Outflow)
+  const saleReturnRow = get(`
+    SELECT COALESCE(SUM(total_refund_amount), 0) as cash_to_sale_refunds
+    FROM sales_returns
+    WHERE refund_mode = 'cash'
       AND created_at >= ?
   `, [openedAt]);
 
   const cashSales = Math.round((Number(salesRow?.cash_from_sales) || 0) * 100) / 100;
   const customerRecoveries = Math.round((Number(customerRecoveryRow?.cash_from_recoveries) || 0) * 100) / 100;
-  const totalInflow = Math.round((cashSales + customerRecoveries) * 100) / 100;
+  const purchaseReturnCash = Math.round((Number(purchaseReturnRow?.cash_from_purchase_returns) || 0) * 100) / 100;
+  const totalInflow = Math.round((cashSales + customerRecoveries + purchaseReturnCash) * 100) / 100;
 
   const cashExpenses = Math.round((Number(expenseRow?.cash_to_expenses) || 0) * 100) / 100;
   const cashPurchases = Math.round((Number(purchaseRow?.cash_to_purchases) || 0) * 100) / 100;
   const supplierPayments = Math.round((Number(supplierPaymentRow?.cash_to_suppliers) || 0) * 100) / 100;
-  const totalOutflow = Math.round((cashExpenses + cashPurchases + supplierPayments) * 100) / 100;
+  const saleReturnCash = Math.round((Number(saleReturnRow?.cash_to_sale_refunds) || 0) * 100) / 100;
+  const totalOutflow = Math.round((cashExpenses + cashPurchases + supplierPayments + saleReturnCash) * 100) / 100;
 
   const float = Math.round((Number(openingCash) || 0) * 100) / 100;
   const expectedClosing = Math.round((float + totalInflow - totalOutflow) * 100) / 100;
@@ -66,10 +86,12 @@ function calculateShiftCashFlow(cashierId, openedAt, openingCash = 0) {
     opening_cash: float,
     cash_sales: cashSales,
     customer_recoveries: customerRecoveries,
+    purchase_returns_received: purchaseReturnCash,
     total_cash_inflow: totalInflow,
     cash_expenses: cashExpenses,
     cash_purchases: cashPurchases,
     supplier_payments: supplierPayments,
+    sale_returns_refunded: saleReturnCash,
     total_cash_outflow: totalOutflow,
     expected_closing_cash: expectedClosing
   };
@@ -235,5 +257,6 @@ module.exports = {
   getCurrentShift,
   openShift,
   closeShift,
-  getShiftHistory
+  getShiftHistory,
+  calculateShiftCashFlow
 };

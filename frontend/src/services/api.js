@@ -90,6 +90,8 @@ export const api = {
       }
     },
     getLowStockAlerts: () => request('/products/alerts/low-stock'),
+    getOversoldAlerts: (status = 'pending') => request(`/products/alerts/oversold?status=${status}`),
+    resolveOversoldAlert: (id, notes = '') => request(`/products/alerts/oversold/${id}/resolve`, { method: 'POST', body: JSON.stringify({ notes }) }),
     create: async (data) => {
       let res = null;
       try {
@@ -223,7 +225,8 @@ export const api = {
       } catch (_) {}
       return { success: true, customerId: newCust.id, customer: newCust };
     },
-    void: (id, data = {}) => request(`/invoices/${id}/void`, { method: 'POST', body: JSON.stringify(data) })
+    void: (id, data = {}) => request(`/invoices/${id}/void`, { method: 'POST', body: JSON.stringify(data) }),
+    delete: (id) => request(`/invoices/${id}`, { method: 'DELETE' })
   },
 
   // Stock Purchases (Supplier Inward)

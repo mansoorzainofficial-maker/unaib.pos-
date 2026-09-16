@@ -43,7 +43,9 @@ function createInvoice(req, res) {
       tax_rate,
       payment_method, // 'cash', 'card', 'online', 'split'
       paid_amount,
-      notes
+      notes,
+      is_offline_sync,
+      offline_created_at
     } = req.body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
@@ -86,6 +88,7 @@ function createInvoice(req, res) {
       // 2. Validate Items, Stock Availability & Calculate Totals
       let subtotal = 0;
       const processedItems = [];
+      const stockWarnings = [];
 
       for (const item of items) {
         const product = get('SELECT * FROM products WHERE id = ?', [item.product_id]);
@@ -94,8 +97,22 @@ function createInvoice(req, res) {
         }
 
         const qty = Number(item.quantity) || 1;
-        if (product.stock_quantity < qty) {
-          throw new Error(`Insufficient stock for "${product.name}". Available: ${product.stock_quantity}, Requested: ${qty}`);
+        const availableStock = Number(product.stock_quantity) || 0;
+
+        if (availableStock < qty) {
+          if (is_offline_sync) {
+            const oversold = qty - Math.max(0, availableStock);
+            stockWarnings.push({
+              product_id: product.id,
+              product_name: product.name,
+              available: availableStock,
+              quantity_sold: qty,
+              quantity_oversold: oversold,
+              message: `"${product.name}" اسٹاک سے زیادہ فروخت ہو چکا ہے (موجود تھا: ${availableStock}، فروخت ہوا: ${qty}، منفی: -${oversold})۔ براہ کرم دستی طور پر چیک کریں۔`
+            });
+          } else {
+            throw new Error(`Insufficient stock for "${product.name}". Available: ${availableStock}, Requested: ${qty}`);
+          }
         }
 
         // Validate serial numbers if product has_serials
@@ -124,6 +141,10 @@ function createInvoice(req, res) {
       // 3. Calculate Discount, Tax, and Grand Total
       let discAmount = 0;
       const discVal = Number(discount_value) || 0;
+      if (discVal < 0) {
+        throw new Error('Discount value cannot be negative');
+      }
+
       if (discount_type === 'percentage') {
         discAmount = (subtotal * discVal) / 100;
       } else {
@@ -134,6 +155,9 @@ function createInvoice(req, res) {
 
       const taxableAmount = Math.round((subtotal - discAmount) * 100) / 100;
       const tRate = Number(tax_rate) || 0;
+      if (tRate < 0) {
+        throw new Error('Tax rate cannot be negative');
+      }
       const taxAmount = Math.round(((taxableAmount * tRate) / 100) * 100) / 100;
       const grandTotal = Math.round((taxableAmount + taxAmount) * 100) / 100;
 
@@ -315,17 +339,16 @@ function createInvoice(req, res) {
           run(`
             INSERT INTO ledger_entries (
               party_type, party_id, entry_type, reference_id, reference_no,
-              debit, credit, balance, description, payment_method, entry_date
-            ) VALUES ('customer', ?, 'sale_invoice', ?, ?, ?, ?, ?, ?, ?, DATE('now'))
+              debit, credit, account_id, description, entry_date
+            ) VALUES ('client', ?, 'sale', ?, ?, ?, ?, ?, ?, DATE('now'))
           `, [
             customerId,
             invoiceId,
             invoiceNumber,
             grandTotal, // Debit: Total sale billed
             paid, // Credit: Amount received immediately
-            newCustomerBalance,
-            ledgerDesc,
-            payment_method || 'cash'
+            (payment_method === 'cash' ? 1 : null),
+            ledgerDesc
           ]);
         }
       }
@@ -341,16 +364,40 @@ function createInvoice(req, res) {
         `, [cashReceived, cashReceived, cashierId]);
       }
 
-      return { invoiceId, invoiceNumber };
+      // 8. If any items were oversold during offline sync, log them into stock_alerts
+      if (stockWarnings.length > 0) {
+        for (const warn of stockWarnings) {
+          run(`
+            INSERT INTO stock_alerts (
+              product_id, product_name, invoice_id, invoice_number,
+              available_before, quantity_sold, quantity_oversold, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
+          `, [
+            warn.product_id,
+            warn.product_name,
+            invoiceId,
+            invoiceNumber,
+            warn.available,
+            warn.quantity_sold,
+            warn.quantity_oversold
+          ]);
+        }
+      }
+
+      return { invoiceId, invoiceNumber, stockWarnings };
     });
 
     // Fetch complete invoice record for thermal receipt response
     const fullInvoice = getFullInvoiceDetails(invoiceResult.invoiceId);
+    if (fullInvoice) {
+      fullInvoice.stock_warnings = invoiceResult.stockWarnings || [];
+    }
 
     return res.status(201).json({
       success: true,
       message: 'Sale completed successfully',
-      invoice: fullInvoice
+      invoice: fullInvoice,
+      stock_warnings: invoiceResult.stockWarnings || []
     });
   } catch (error) {
     console.error('Sale transaction failed:', error);
@@ -386,7 +433,7 @@ function getFullInvoiceDetails(invoiceId) {
 
   // Fetch serial numbers linked to this invoice
   const serials = query(`
-    SELECT serial_number, product_id, warranty_expiry_date
+    SELECT serial_number, product_id, invoice_item_id, warranty_expiry_date
     FROM serial_numbers
     WHERE invoice_id = ?
   `, [invoiceId]);
@@ -395,7 +442,7 @@ function getFullInvoiceDetails(invoiceId) {
   const itemsWithSerials = items.map(item => ({
     ...item,
     serial_numbers: serials
-      .filter(s => s.product_id === item.product_id)
+      .filter(s => s.invoice_item_id ? s.invoice_item_id === item.id : s.product_id === item.product_id)
       .map(s => ({
         serial_number: s.serial_number,
         warranty_expiry: s.warranty_expiry_date
@@ -526,9 +573,9 @@ function createCustomer(req, res) {
     if (openBal > 0) {
       run(`
         INSERT INTO ledger_entries (
-          party_type, party_id, entry_type, debit, credit, balance, description, entry_date
-        ) VALUES ('customer', ?, 'opening_balance', ?, 0, ?, 'Opening Balance (Previous Udhar)', DATE('now'))
-      `, [customerId, openBal, openBal]);
+          party_type, party_id, entry_type, debit, credit, description, entry_date
+        ) VALUES ('client', ?, 'opening_balance', ?, 0, 'Opening Balance (Previous Udhar)', DATE('now'))
+      `, [customerId, openBal]);
     }
 
     return res.status(201).json({
@@ -542,69 +589,60 @@ function createCustomer(req, res) {
 }
 
 /**
- * Void / Cancel an Invoice (Sales Order)
- * Reverses stock, frees serial numbers, and logs reversal in customer khata/ledger
+ * Void / Cancel a POS Sale Invoice (Atomic rollback)
  */
 function voidInvoice(req, res) {
   try {
-    const invoiceId = Number(req.params.id);
-    const { reason } = req.body;
+    const { id } = req.params;
+    const void_reason = (req.body.void_reason || req.body.reason || '').trim();
+    const voidedBy = req.user ? req.user.id : 1;
+    const invoiceId = Number(id);
 
-    if (!invoiceId) {
-      return res.status(400).json({ success: false, message: 'Valid Invoice ID is required' });
+    if (!void_reason) {
+      return res.status(400).json({ success: false, message: 'Void reason is required' });
     }
 
-    const voidReason = (reason && reason.trim()) ? reason.trim() : 'Customer returned / Voided by Cashier';
-    const voidedBy = req.user ? req.user.id : 1;
-
-    const result = transaction(({ query, get, run }) => {
-      // 1. Fetch invoice and ensure it exists and isn't already voided
+    const voidResult = transaction(({ query, get, run }) => {
+      // 1. Fetch active invoice record
       const invoice = get('SELECT * FROM invoices WHERE id = ?', [invoiceId]);
       if (!invoice) {
         throw new Error('Invoice not found');
       }
-      if (invoice.status === 'void' || invoice.status === 'cancelled') {
-        throw new Error(`Invoice #${invoice.invoice_number} is already marked as ${invoice.status}`);
+
+      if (invoice.voided_at || invoice.status === 'void' || invoice.status === 'cancelled') {
+        throw new Error('Invoice is already voided');
       }
 
-      // 2. Fetch line items
-      const items = query('SELECT * FROM invoice_items WHERE invoice_id = ?', [invoiceId]);
+      // 2. Fetch line items and serials
+      const lineItems = query('SELECT * FROM invoice_items WHERE invoice_id = ?', [invoiceId]);
 
-      // 3. Restore product inventory stock
-      for (const it of items) {
-        if (it.product_id) {
-          run(
-            'UPDATE products SET stock_quantity = stock_quantity + ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-            [it.quantity, it.product_id]
-          );
-        }
+      // 3. Restore product stock quantities
+      for (const it of lineItems) {
+        run('UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?', [
+          it.quantity,
+          it.product_id
+        ]);
       }
 
-      // 4. Return serialized components to 'in_stock'
-      run(`
-        UPDATE serial_numbers SET
-          status = 'in_stock',
-          invoice_id = NULL,
-          invoice_item_id = NULL,
-          sold_date = NULL,
-          warranty_expiry_date = NULL,
-          customer_id = NULL
-        WHERE invoice_id = ?
-      `, [invoiceId]);
+      // 4. Free / unassign serial numbers
+      run(
+        "UPDATE serial_numbers SET status = 'in_stock', invoice_id = NULL, invoice_item_id = NULL, customer_id = NULL, sold_date = NULL, warranty_expiry_date = NULL WHERE invoice_id = ?",
+        [invoiceId]
+      );
 
-      // 5. Update Invoice Header
+      // 5. Mark Invoice Header as voided and update status to void
       run(`
         UPDATE invoices SET
           status = 'void',
-          void_reason = ?,
           voided_at = CURRENT_TIMESTAMP,
-          voided_by = ?
+          voided_by = ?,
+          void_reason = ?
         WHERE id = ?
-      `, [voidReason, voidedBy, invoiceId]);
+      `, [voidedBy, void_reason, invoiceId]);
 
-      // 6. Reverse Customer Khata / Ledger
+      // 6. Reverse Customer Lifetime Spend and Khata / Ledger Balance
       if (invoice.customer_id) {
-        const customer = get('SELECT * FROM customers WHERE id = ?', [invoice.customer_id]);
+        const customer = get('SELECT id, current_balance, total_spent FROM customers WHERE id = ?', [invoice.customer_id]);
         if (customer) {
           const grandTotal = Number(invoice.grand_total) || 0;
           const paid = Number(invoice.paid_amount) || 0;
@@ -621,16 +659,16 @@ function voidInvoice(req, res) {
           run(`
             INSERT INTO ledger_entries (
               party_type, party_id, entry_type, reference_id, reference_no,
-              debit, credit, balance, description, payment_method, entry_date
-            ) VALUES ('customer', ?, 'sale_void', ?, ?, ?, ?, ?, ?, 'void', DATE('now'))
+              debit, credit, account_id, description, entry_date
+            ) VALUES ('client', ?, 'sale_void', ?, ?, ?, ?, ?, ?, DATE('now'))
           `, [
             invoice.customer_id,
             invoiceId,
             invoice.invoice_number,
             paid,
             grandTotal,
-            newCustBalance,
-            `VOIDED #${invoice.invoice_number} - ${voidReason}`
+            (invoice.payment_method === 'cash' ? 1 : null),
+            `VOIDED #${invoice.invoice_number} - ${void_reason}`
           ]);
         }
       }
@@ -654,18 +692,76 @@ function voidInvoice(req, res) {
         success: true,
         invoice_id: invoiceId,
         invoice_number: invoice.invoice_number,
-        void_reason: voidReason,
-        items_restored: items.length
+        void_reason: void_reason,
+        items_restored: lineItems.length
       };
     });
 
     return res.json({
       success: true,
-      message: `Invoice #${result.invoice_number} successfully voided. Stock & Khata restored.`,
-      result
+      message: `Invoice #${voidResult.invoice_number} successfully voided. Stock & Khata restored.`,
+      result: voidResult
     });
   } catch (error) {
     return res.status(400).json({ success: false, message: error.message });
+  }
+}
+
+/**
+ * Permanently Delete an Invoice (Restores stock & ledger, deletes record)
+ * DELETE /api/invoices/:id
+ */
+function deleteInvoice(req, res) {
+  try {
+    const invoiceId = Number(req.params.id);
+    const invoice = get('SELECT * FROM invoices WHERE id = ?', [invoiceId]);
+    if (!invoice) {
+      return res.status(404).json({ success: false, message: 'Invoice not found' });
+    }
+
+    transaction(({ query, get, run }) => {
+      // 1. If not voided yet, restore product stock & serials first
+      if (!invoice.voided_at && invoice.status !== 'void' && invoice.status !== 'cancelled') {
+        const lineItems = query('SELECT * FROM invoice_items WHERE invoice_id = ?', [invoiceId]);
+        for (const it of lineItems) {
+          run('UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?', [
+            it.quantity,
+            it.product_id
+          ]);
+        }
+        run(
+          "UPDATE serial_numbers SET status = 'in_stock', invoice_id = NULL, invoice_item_id = NULL, customer_id = NULL, sold_date = NULL, warranty_expiry_date = NULL WHERE invoice_id = ?",
+          [invoiceId]
+        );
+        if (invoice.customer_id) {
+          const customer = get('SELECT id, current_balance, total_spent FROM customers WHERE id = ?', [invoice.customer_id]);
+          if (customer) {
+            const grandTotal = Number(invoice.grand_total) || 0;
+            const paid = Number(invoice.paid_amount) || 0;
+            const netInvoiceDelta = grandTotal - paid;
+            const newCustBalance = Math.round(((customer.current_balance || 0) - netInvoiceDelta) * 100) / 100;
+            const newTotalSpent = Math.max(0, (customer.total_spent || 0) - grandTotal);
+            run('UPDATE customers SET current_balance = ?, total_spent = ? WHERE id = ?', [newCustBalance, newTotalSpent, invoice.customer_id]);
+          }
+        }
+      }
+
+      // 2. Remove ledger entries for this invoice
+      run("DELETE FROM ledger_entries WHERE party_type = 'client' AND reference_id = ?", [invoiceId]);
+
+      // 3. Delete invoice line items
+      run('DELETE FROM invoice_items WHERE invoice_id = ?', [invoiceId]);
+
+      // 4. Delete invoice record
+      run('DELETE FROM invoices WHERE id = ?', [invoiceId]);
+    });
+
+    return res.json({
+      success: true,
+      message: `Invoice #${invoice.invoice_number} successfully deleted.`
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
   }
 }
 
@@ -676,5 +772,6 @@ module.exports = {
   getFullInvoiceDetails,
   getCustomers,
   createCustomer,
-  voidInvoice
+  voidInvoice,
+  deleteInvoice
 };

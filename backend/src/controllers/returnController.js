@@ -145,34 +145,29 @@ function createSaleReturn(req, res) {
             customer_id
           ]);
 
-          const updatedCust = get('SELECT current_balance FROM customers WHERE id = ?', [customer_id]);
-
           run(`
             INSERT INTO ledger_entries (
               party_type, party_id, entry_type, reference_id, reference_no,
-              debit, credit, balance, description, payment_method, entry_date
-            ) VALUES ('customer', ?, 'sale_return', ?, ?, 0, ?, ?, ?, 'khata_credit', DATE('now'))
+              debit, credit, account_id, description, entry_date
+            ) VALUES ('client', ?, 'sale_return', ?, ?, 0, ?, NULL, ?, DATE('now'))
           `, [
             customer_id,
             returnId,
             returnNumber,
             totalRefund,
-            updatedCust ? updatedCust.current_balance : 0,
             `Sale Return #${returnNumber} (Khata Credited)`
           ]);
         } else {
           // Cash refunded to customer
-          const currentCust = get('SELECT current_balance FROM customers WHERE id = ?', [customer_id]);
           run(`
             INSERT INTO ledger_entries (
               party_type, party_id, entry_type, reference_id, reference_no,
-              debit, credit, balance, description, payment_method, entry_date
-            ) VALUES ('customer', ?, 'sale_return', ?, ?, 0, 0, ?, ?, 'cash', DATE('now'))
+              debit, credit, account_id, description, entry_date
+            ) VALUES ('client', ?, 'sale_return', ?, ?, 0, 0, 1, ?, DATE('now'))
           `, [
             customer_id,
             returnId,
             returnNumber,
-            currentCust ? currentCust.current_balance : 0,
             `Sale Return #${returnNumber} (Cash Refunded: Rs. ${totalRefund.toLocaleString()})`
           ]);
         }
@@ -303,34 +298,29 @@ function createPurchaseReturn(req, res) {
           supplier_id
         ]);
 
-        const updatedSup = get('SELECT current_balance FROM suppliers WHERE id = ?', [supplier_id]);
-
         run(`
           INSERT INTO ledger_entries (
             party_type, party_id, entry_type, reference_id, reference_no,
-            debit, credit, balance, description, payment_method, entry_date
-          ) VALUES ('supplier', ?, 'purchase_return', ?, ?, ?, 0, ?, ?, 'deduct_balance', DATE('now'))
+            debit, credit, account_id, description, entry_date
+          ) VALUES ('supplier', ?, 'purchase_return', ?, ?, ?, 0, NULL, ?, DATE('now'))
         `, [
           supplier_id,
           returnId,
           returnNumber,
           totalAmount,
-          updatedSup ? updatedSup.current_balance : 0,
           `Purchase Return #${returnNumber} (Supplier Balance Deducted)`
         ]);
       } else {
         // Cash received back from supplier
-        const currentSup = get('SELECT current_balance FROM suppliers WHERE id = ?', [supplier_id]);
         run(`
           INSERT INTO ledger_entries (
             party_type, party_id, entry_type, reference_id, reference_no,
-            debit, credit, balance, description, payment_method, entry_date
-          ) VALUES ('supplier', ?, 'purchase_return', ?, ?, 0, 0, ?, ?, 'cash', DATE('now'))
+            debit, credit, account_id, description, entry_date
+          ) VALUES ('supplier', ?, 'purchase_return', ?, ?, 0, 0, 1, ?, DATE('now'))
         `, [
           supplier_id,
           returnId,
           returnNumber,
-          currentSup ? currentSup.current_balance : 0,
           `Purchase Return #${returnNumber} (Cash Received: Rs. ${totalAmount.toLocaleString()})`
         ]);
 

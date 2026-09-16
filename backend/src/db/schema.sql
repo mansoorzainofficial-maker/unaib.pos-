@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS suppliers (
     email TEXT,
     address TEXT,
     current_balance REAL DEFAULT 0.0, -- Positive means we owe supplier (Payable)
+    total_due REAL DEFAULT 0.0, -- Total payable balance to supplier
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -141,22 +142,35 @@ CREATE TABLE IF NOT EXISTS purchase_items (
     total_cost REAL NOT NULL DEFAULT 0.0
 );
 
--- 10. Double-Entry Party Ledgers (Khata / Udhar & Payables)
+-- 10. Financial Accounts (Cash Drawer, Bank Accounts, Wallets)
+CREATE TABLE IF NOT EXISTS accounts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL CHECK(type IN ('cash', 'bank', 'wallet')),
+    account_number TEXT,
+    branch_name TEXT,
+    is_default INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 11. Unified Party Ledgers (Khata for Supplier & Client)
 CREATE TABLE IF NOT EXISTS ledger_entries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    party_type TEXT NOT NULL CHECK(party_type IN ('customer', 'supplier')),
+    party_type TEXT NOT NULL CHECK(party_type IN ('supplier', 'client', 'customer')),
     party_id INTEGER NOT NULL,
-    entry_type TEXT NOT NULL, -- 'sale_invoice', 'purchase_bill', 'payment_received', 'payment_made', 'adjustment'
+    entry_type TEXT NOT NULL CHECK(entry_type IN ('grn', 'payment', 'sale', 'return', 'adjustment', 'sale_invoice', 'purchase_bill', 'payment_received', 'payment_made')),
     reference_id INTEGER,
     reference_no TEXT,
-    debit REAL DEFAULT 0.0,   -- Customer: Sale invoice (+); Supplier: Payment made (-)
-    credit REAL DEFAULT 0.0,  -- Customer: Payment received (-); Supplier: Purchase bill (+)
-    balance REAL NOT NULL,    -- Running balance after transaction
+    debit REAL NOT NULL DEFAULT 0.0,
+    credit REAL NOT NULL DEFAULT 0.0,
+    account_id INTEGER REFERENCES accounts(id) ON DELETE SET NULL,
     description TEXT,
-    payment_method TEXT DEFAULT 'cash',
     entry_date DATE NOT NULL,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+CREATE INDEX IF NOT EXISTS idx_ledger_party_search ON ledger_entries(party_type, party_id, entry_date);
+CREATE INDEX IF NOT EXISTS idx_ledger_account ON ledger_entries(account_id);
+CREATE INDEX IF NOT EXISTS idx_ledger_ref ON ledger_entries(reference_id, entry_type);
 
 -- 11. Serial Numbers & Warranty Records
 CREATE TABLE IF NOT EXISTS serial_numbers (
@@ -287,3 +301,44 @@ CREATE INDEX IF NOT EXISTS idx_purchases_num ON purchases(purchase_number);
 CREATE INDEX IF NOT EXISTS idx_ledger_party ON ledger_entries(party_type, party_id);
 CREATE INDEX IF NOT EXISTS idx_sales_returns_num ON sales_returns(return_number);
 CREATE INDEX IF NOT EXISTS idx_purchase_returns_num ON purchase_returns(return_number);
+
+-- 20. Goods Received Note (GRN Header)
+CREATE TABLE IF NOT EXISTS grn (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    grn_number TEXT UNIQUE NOT NULL,
+    supplier_id INTEGER NOT NULL REFERENCES suppliers(id) ON DELETE RESTRICT,
+    total_amount REAL NOT NULL DEFAULT 0.0,
+    payment_type TEXT NOT NULL CHECK(payment_type IN ('cash', 'credit')),
+    status TEXT NOT NULL DEFAULT 'completed' CHECK(status IN ('completed', 'pending', 'cancelled')),
+    received_date DATE NOT NULL,
+    notes TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_grn_number ON grn(grn_number);
+CREATE INDEX IF NOT EXISTS idx_grn_supplier ON grn(supplier_id);
+
+-- 21. GRN Items
+CREATE TABLE IF NOT EXISTS grn_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    grn_id INTEGER NOT NULL REFERENCES grn(id) ON DELETE CASCADE,
+    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE RESTRICT,
+    quantity_ordered INTEGER NOT NULL DEFAULT 1,
+    quantity_received INTEGER NOT NULL DEFAULT 1,
+    unit_cost REAL NOT NULL DEFAULT 0.0,
+    total_cost REAL NOT NULL DEFAULT 0.0
+);
+CREATE INDEX IF NOT EXISTS idx_grn_items_grn_id ON grn_items(grn_id);
+
+-- 22. General Financial Transactions (Cash / Bank Outflow Ledger)
+CREATE TABLE IF NOT EXISTS transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type TEXT NOT NULL CHECK(type IN ('debit', 'credit')),
+    category TEXT NOT NULL,
+    amount REAL NOT NULL,
+    reference_id INTEGER,
+    reference_type TEXT,
+    description TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_transactions_cat ON transactions(category);
+

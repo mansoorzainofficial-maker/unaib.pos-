@@ -129,7 +129,7 @@ function createPurchase(req, res) {
 
       // 3. Process Line Items: Add stock, update cost/sale prices, register serials
       for (const it of processedItems) {
-        run(`
+        const piRes = run(`
           INSERT INTO purchase_items (
             purchase_id, product_id, product_name, cost_price, sale_price,
             quantity, total_cost
@@ -143,6 +143,7 @@ function createPurchase(req, res) {
           it.qty,
           it.lineTotal
         ]);
+        const purchaseItemId = piRes.lastInsertRowid;
 
         // Increment stock and update prices on product
         run(`
@@ -162,12 +163,13 @@ function createPurchase(req, res) {
             if (!clean) continue;
             run(`
               INSERT INTO serial_numbers (
-                serial_number, product_id, purchase_id, status
-              ) VALUES (?, ?, ?, 'in_stock')
+                serial_number, product_id, purchase_id, purchase_item_id, status
+              ) VALUES (?, ?, ?, ?, 'in_stock')
               ON CONFLICT(serial_number) DO UPDATE SET
                 status = 'in_stock',
-                purchase_id = excluded.purchase_id
-            `, [clean, it.product.id, purchaseId]);
+                purchase_id = excluded.purchase_id,
+                purchase_item_id = excluded.purchase_item_id
+            `, [clean, it.product.id, purchaseId, purchaseItemId]);
           }
         }
       }
@@ -185,20 +187,20 @@ function createPurchase(req, res) {
       }
 
       // Record in ledger: Purchase Bill (Credit increases what we owe, Debit reflects immediate payment)
+      const cashAccId = (payment_method === 'cash' && paid > 0) ? 1 : null;
       run(`
         INSERT INTO ledger_entries (
           party_type, party_id, entry_type, reference_id, reference_no,
-          debit, credit, balance, description, payment_method, entry_date
-        ) VALUES ('supplier', ?, 'purchase_bill', ?, ?, ?, ?, ?, ?, ?, ?)
+          debit, credit, account_id, description, entry_date
+        ) VALUES ('supplier', ?, 'purchase_bill', ?, ?, ?, ?, ?, ?, ?)
       `, [
         supplier_id,
         purchaseId,
         purchaseNumber,
         paid, // Amount paid immediately
         grandTotal, // Total bill amount
-        newSupBal,
-        ledgerDesc,
-        payment_method || 'cash',
+        cashAccId,
+        ledgerDesc + (payment_method ? ` [via ${payment_method}]` : ''),
         purDate
       ]);
 
@@ -335,11 +337,13 @@ function getPurchaseDetails(req, res) {
     `, [purchase.id]);
 
     // Fetch serial numbers created under this purchase
-    const serials = query('SELECT serial_number, product_id FROM serial_numbers WHERE purchase_id = ?', [purchase.id]);
+    const serials = query('SELECT serial_number, product_id, purchase_item_id FROM serial_numbers WHERE purchase_id = ?', [purchase.id]);
 
     const itemsWithSerials = items.map(it => ({
       ...it,
-      serials: serials.filter(s => s.product_id === it.product_id).map(s => s.serial_number)
+      serials: serials
+        .filter(s => s.purchase_item_id ? s.purchase_item_id === it.id : s.product_id === it.product_id)
+        .map(s => s.serial_number)
     }));
 
     return res.json({ success: true, purchase: { ...purchase, items: itemsWithSerials } });
@@ -428,18 +432,19 @@ function voidPurchase(req, res) {
         run('UPDATE suppliers SET current_balance = ? WHERE id = ?', [newSupBalance, purchase.supplier_id]);
 
         // Log reversing entry in ledger: Supplier Void
+        const cashAccId = (purchase.payment_method === 'cash' && paid > 0) ? 1 : null;
         run(`
           INSERT INTO ledger_entries (
             party_type, party_id, entry_type, reference_id, reference_no,
-            debit, credit, balance, description, payment_method, entry_date
-          ) VALUES ('supplier', ?, 'purchase_void', ?, ?, ?, ?, ?, ?, 'void', DATE('now'))
+            debit, credit, account_id, description, entry_date
+          ) VALUES ('supplier', ?, 'purchase_void', ?, ?, ?, ?, ?, ?, DATE('now'))
         `, [
           purchase.supplier_id,
           purchaseId,
           purchase.purchase_number,
           grandTotal,
           paid,
-          newSupBalance,
+          cashAccId,
           `VOIDED PURCHASE #${purchase.purchase_number} - ${voidReason}`
         ]);
       }

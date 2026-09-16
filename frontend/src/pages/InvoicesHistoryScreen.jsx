@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import ThermalReceipt from '../components/ThermalReceipt';
 import Modal from '../components/Modal';
-import { Receipt, Search, Printer, Calendar, User, Eye, Ban, AlertTriangle, CheckCircle, RefreshCw } from 'lucide-react';
+import { Receipt, Search, Printer, Calendar, User, Eye, Ban, AlertTriangle, CheckCircle, RefreshCw, Trash2 } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 
 export default function InvoicesHistoryScreen() {
@@ -74,8 +74,10 @@ export default function InvoicesHistoryScreen() {
 
     setIsVoiding(true);
     try {
+      const trimmedReason = voidReason.trim() || (isUrdu ? 'گاہک نے مال واپس کیا / کیشئر منسوخی' : 'Customer returned items / Voided by cashier');
       const res = await api.invoices.void(invoiceToVoid.id, {
-        reason: voidReason.trim() || (isUrdu ? 'گاہک نے مال واپس کیا / کیشئر منسوخی' : 'Customer returned items / Voided by cashier')
+        void_reason: trimmedReason,
+        reason: trimmedReason
       });
 
       if (res.success) {
@@ -100,13 +102,43 @@ export default function InvoicesHistoryScreen() {
     }
   };
 
+  const handleDeletePermanent = async (inv) => {
+    const confirmPrompt = isUrdu
+      ? `کیا آپ واقعی بل نمبر #${inv.invoice_number} کو مستقل طور پر سسٹم سے ڈیلیٹ کرنا چاہتے ہیں؟ (اسٹاک اور کھاتہ خودکار بحال ہوگا)`
+      : `Are you sure you want to permanently delete invoice #${inv.invoice_number}? (Stock and khata will be restored)`;
+
+    if (!window.confirm(confirmPrompt)) return;
+
+    try {
+      const res = await api.invoices.delete(inv.id);
+      if (res.success) {
+        setFeedbackMsg({
+          type: 'success',
+          text: isUrdu
+            ? `بل نمبر #${inv.invoice_number} کامیابی سے مستقل ڈیلیٹ ہو گیا۔`
+            : `Invoice #${inv.invoice_number} permanently deleted.`
+        });
+        loadInvoices();
+        setTimeout(() => setFeedbackMsg(null), 4000);
+      }
+    } catch (err) {
+      setFeedbackMsg({
+        type: 'error',
+        text: err.message || (isUrdu ? 'بل ڈیلیٹ کرنے میں خرابی ہوئی' : 'Failed to delete invoice')
+      });
+    }
+  };
+
+  // Check whether invoice is voided or cancelled
+  const isInvoiceVoid = (inv) => inv?.status === 'void' || inv?.status === 'cancelled' || !!inv?.voided_at;
+
   // Counts
-  const activeCount = invoices.filter(i => i.status !== 'void' && i.status !== 'cancelled').length;
-  const voidCount = invoices.filter(i => i.status === 'void' || i.status === 'cancelled').length;
+  const activeCount = invoices.filter(i => !isInvoiceVoid(i)).length;
+  const voidCount = invoices.filter(i => isInvoiceVoid(i)).length;
 
   // Filtered list: strictly remove voided invoices when on active tab (default)
   const displayedInvoices = invoices.filter(inv => {
-    const isVoid = inv.status === 'void' || inv.status === 'cancelled';
+    const isVoid = isInvoiceVoid(inv);
     if (statusFilter === 'active') return !isVoid;
     if (statusFilter === 'voided') return isVoid;
     return true;
@@ -241,7 +273,7 @@ export default function InvoicesHistoryScreen() {
               </tr>
             ) : (
               displayedInvoices.map((inv) => {
-                const isVoid = inv.status === 'void' || inv.status === 'cancelled';
+                const isVoid = isInvoiceVoid(inv);
                 return (
                   <tr
                     key={inv.id}
@@ -314,13 +346,22 @@ export default function InvoicesHistoryScreen() {
                               setInvoiceToVoid(inv);
                               setVoidReason('');
                             }}
-                            className="inline-flex items-center space-x-1 px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded text-xs font-semibold transition-colors cursor-pointer"
+                            className="inline-flex items-center space-x-1 px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded text-xs font-semibold transition-colors cursor-pointer"
                             title={isUrdu ? 'یہ بل منسوخ کریں (اسٹاک اور کھاتہ خودکار بحال ہوگا)' : 'Void / Cancel this Bill (Restore Stock & Khata)'}
                           >
                             <Ban className="w-3.5 h-3.5" />
                             <span>{isUrdu ? 'منسوخ' : 'Void'}</span>
                           </button>
                         )}
+
+                        <button
+                          onClick={() => handleDeletePermanent(inv)}
+                          className="inline-flex items-center space-x-1 px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded text-xs font-semibold transition-colors cursor-pointer"
+                          title={isUrdu ? 'یہ بل مستقل ڈیلیٹ کریں (اسٹاک اور کھاتہ بحال ہوگا)' : 'Permanently Delete this Bill'}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>{isUrdu ? 'ڈیلیٹ' : 'Delete'}</span>
+                        </button>
                       </div>
                     </td>
                   </tr>

@@ -551,12 +551,75 @@ function createSupplier(req, res) {
     if (openBal > 0) {
       run(`
         INSERT INTO ledger_entries (
-          party_type, party_id, entry_type, debit, credit, balance, description, entry_date
-        ) VALUES ('supplier', ?, 'opening_balance', 0, ?, ?, 'Opening Balance (Previous Payable)', DATE('now'))
-      `, [supplierId, openBal, openBal]);
+          party_type, party_id, entry_type, debit, credit, description, entry_date
+        ) VALUES ('supplier', ?, 'opening_balance', 0, ?, 'Opening Balance (Previous Payable)', DATE('now'))
+      `, [supplierId, openBal]);
     }
 
     return res.status(201).json({ success: true, message: 'Supplier registered successfully', supplierId });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+/**
+ * Get unresolved oversold stock alerts (triggered by offline billing sync)
+ * GET /api/products/alerts/oversold?status=pending|resolved|all
+ */
+function getOversoldAlerts(req, res) {
+  try {
+    const status = req.query.status || 'pending';
+    let sql = `
+      SELECT sa.*, p.stock_quantity as current_stock, p.barcode
+      FROM stock_alerts sa
+      LEFT JOIN products p ON sa.product_id = p.id
+    `;
+    const params = [];
+    if (status !== 'all') {
+      sql += ' WHERE sa.status = ?';
+      params.push(status);
+    }
+    sql += ' ORDER BY sa.id DESC';
+
+    const alerts = query(sql, params);
+    return res.json({
+      success: true,
+      count: alerts.length,
+      alerts
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+/**
+ * Resolve an oversold alert
+ * POST /api/products/alerts/oversold/:id/resolve
+ */
+function resolveOversoldAlert(req, res) {
+  try {
+    const { id } = req.params;
+    const userId = req.user ? req.user.id : null;
+    const notes = req.body.notes || '';
+
+    const alert = get('SELECT * FROM stock_alerts WHERE id = ?', [id]);
+    if (!alert) {
+      return res.status(404).json({ success: false, message: 'Stock alert not found' });
+    }
+
+    run(`
+      UPDATE stock_alerts
+      SET status = 'resolved',
+          resolved_at = CURRENT_TIMESTAMP,
+          resolved_by = ?,
+          notes = CASE WHEN notes IS NOT NULL AND notes != '' THEN notes || ' | ' || ? ELSE ? END
+      WHERE id = ?
+    `, [userId, notes, notes, id]);
+
+    return res.json({
+      success: true,
+      message: 'اسٹاک الرٹ کامیابی سے حل شدہ مارک کر دیا گیا ہے۔ (Alert resolved successfully)'
+    });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
   }
@@ -567,6 +630,8 @@ module.exports = {
   getProductById,
   getProductByBarcode,
   getLowStockAlerts,
+  getOversoldAlerts,
+  resolveOversoldAlert,
   createProduct,
   updateProduct,
   deleteProduct,

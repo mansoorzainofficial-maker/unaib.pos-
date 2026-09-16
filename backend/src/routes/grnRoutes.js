@@ -1,6 +1,6 @@
 ﻿const express = require('express');
 const router = express.Router();
-const ledgerController = require('../controllers/ledgerController');
+const grnController = require('../controllers/grnController');
 const { authRequired } = require('../middleware/auth');
 
 function authFlexible(req, res, next) {
@@ -11,9 +11,8 @@ function authFlexible(req, res, next) {
   next();
 }
 
-router.get('/accounts', authFlexible, ledgerController.getAccounts);
-router.get('/parties', authFlexible, ledgerController.getParties);
-router.get('/statement', authFlexible, ledgerController.getStatement);
-router.post('/payment', authFlexible, ledgerController.recordPayment);
+router.get('/', authFlexible, grnController.getAllGrns);
+router.get('/:id', authFlexible, grnController.getGrnById);
+router.post('/', authFlexible, grnController.createGrn);
 
 module.exports = router;

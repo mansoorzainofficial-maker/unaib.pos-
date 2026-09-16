@@ -14,3 +14,9 @@ Thumbs.db
 
 # Environment variables
 .env
+
+# Backups & SQLite temporary files
+backups/
+*.sqlite-wal
+*.sqlite-shm
+
