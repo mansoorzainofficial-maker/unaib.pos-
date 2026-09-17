@@ -14,7 +14,7 @@ class Ledger {
   /**
    * Get all parties with real-time calculated balances: SUM(debit) - SUM(credit)
    */
-  static getPartiesWithBalances(partyType) {
+  static async getPartiesWithBalances(partyType) {
     const isClient = partyType === 'client' || partyType === 'customer';
     const tableName = isClient ? 'customers' : 'suppliers';
     const aliases = this.getPartyTypeAliases(partyType);
@@ -37,23 +37,23 @@ class Ledger {
       ORDER BY p.name ASC
     `;
 
-    return query(sql, aliases);
+    return await query(sql, aliases);
   }
 
   /**
    * Get full ledger statement with dynamic running balance (calculated via window function)
    */
-  static getPartyStatement(partyType, partyId) {
+  static async getPartyStatement(partyType, partyId) {
     const isClient = partyType === 'client' || partyType === 'customer';
     const tableName = isClient ? 'customers' : 'suppliers';
     const aliases = this.getPartyTypeAliases(partyType);
 
     // Fetch party details
-    const party = get(`SELECT * FROM ${tableName} WHERE id = ?`, [partyId]);
+    const party = await get(`SELECT * FROM ${tableName} WHERE id = ?`, [partyId]);
     if (!party) return null;
 
     // Fetch entries with dynamic on-the-fly running balance
-    const entries = query(`
+    const entries = await query(`
       SELECT 
         le.id,
         le.party_type,
@@ -101,7 +101,7 @@ class Ledger {
    * Record Payment inside ACID SQL transaction
    * account_id is STRICTLY MANDATORY for payments
    */
-  static recordPaymentWithTransaction({ party_type, party_id, account_id, amount, entry_date, notes = null }) {
+  static async recordPaymentWithTransaction({ party_type, party_id, account_id, amount, entry_date, notes = null }) {
     // 1. Strict Validation
     if (!party_type || !['supplier', 'client', 'customer'].includes(party_type)) {
       throw new Error('Valid party type ("supplier" or "client") is required');
@@ -122,31 +122,31 @@ class Ledger {
       throw new Error('Payment date is required');
     }
 
-    return transaction(() => {
+    const isClient = party_type === 'client' || party_type === 'customer';
+    const normPartyType = isClient ? 'client' : 'supplier';
+    const tableName = isClient ? 'customers' : 'suppliers';
+
+    await transaction(async ({ query: txQuery, get: txGet, run: txRun }) => {
       // Verify Account exists
-      const account = get('SELECT id, name, type FROM accounts WHERE id = ?', [account_id]);
+      const account = await txGet('SELECT id, name, type, current_balance FROM accounts WHERE id = ?', [account_id]);
       if (!account) {
         throw new Error('Please select cash or bank account');
       }
 
       // Verify Party exists
-      const isClient = party_type === 'client' || party_type === 'customer';
-      const tableName = isClient ? 'customers' : 'suppliers';
-      const party = get(`SELECT id, name FROM ${tableName} WHERE id = ?`, [party_id]);
+      const party = await txGet(`SELECT id, name FROM ${tableName} WHERE id = ?`, [party_id]);
       if (!party) {
         throw new Error(`${isClient ? 'Client' : 'Supplier'} not found with ID ${party_id}`);
       }
 
       // Generate Voucher Number: PMT-0001
-      const countRow = get("SELECT COUNT(*) as cnt FROM ledger_entries WHERE entry_type = 'payment'");
-      const voucherNo = `PMT-${String((countRow?.cnt || 0) + 1).padStart(4, '0')}`;
+      const countRow = await txGet("SELECT COUNT(*) as cnt FROM ledger_entries WHERE entry_type = 'payment'");
+      const voucherNo = `PMT-${String((Number(countRow?.cnt) || 0) + 1).padStart(4, '0')}`;
 
       // Insert into ledger_entries
-      // Payment reduces party balance -> Credit amount
-      const normPartyType = isClient ? 'client' : 'supplier';
       const desc = notes ? notes.trim() : `Payment via ${account.name}`;
 
-      const res = run(`
+      const res = await txRun(`
         INSERT INTO ledger_entries (
           party_type, party_id, entry_type, reference_no, 
           debit, credit, account_id, description, entry_date
@@ -156,29 +156,35 @@ class Ledger {
         )
       `, [normPartyType, party_id, voucherNo, numericAmount, account_id, desc, entry_date]);
 
-      const ledgerEntryId = res.lastInsertRowid;
+      // Deduct or add account balance in accounts table
+      const balanceChange = isClient ? numericAmount : -numericAmount;
+      await txRun(`
+        UPDATE accounts 
+        SET current_balance = current_balance + ? 
+        WHERE id = ?
+      `, [balanceChange, account_id]);
 
-      // Insert into transactions table for cash/bank reconciliation
-      // For Supplier payment: Cash outflow -> 'debit'
-      // For Client receipt: Cash inflow -> 'credit'
-      const txType = normPartyType === 'supplier' ? 'debit' : 'credit';
-      const txCategory = normPartyType === 'supplier' ? 'supplier_payment' : 'customer_receipt';
-      const txDesc = `${normPartyType === 'supplier' ? 'Payment to' : 'Received from'} ${party.name} (${voucherNo})`;
-
-      run(`
-        INSERT INTO transactions (
-          type, category, amount, account_id, 
-          reference_id, reference_type, description
+      // Record in accounts_ledger
+      const newAccBal = Number(account.current_balance) + balanceChange;
+      await txRun(`
+        INSERT INTO accounts_ledger (
+          account_id, entry_type, reference_no, debit, credit, balance_after, description
         ) VALUES (
-          ?, ?, ?, ?,
-          ?, 'ledger_entry', ?
+          ?, 'party_payment', ?, ?, ?, ?, ?
         )
-      `, [txType, txCategory, numericAmount, account_id, ledgerEntryId, txDesc]);
+      `, [
+        account_id, 
+        voucherNo, 
+        isClient ? numericAmount : 0.0, 
+        isClient ? 0.0 : numericAmount, 
+        newAccBal, 
+        `${isClient ? 'Received from' : 'Payment to'} ${party.name} (${voucherNo})`
+      ]);
 
       // Sync cached balance in suppliers/customers table
       try {
         const altPartyType = isClient ? 'customer' : 'supplier';
-        const balRow = get(`
+        const balRow = await txGet(`
           SELECT (COALESCE(SUM(debit), 0.0) - COALESCE(SUM(credit), 0.0)) as bal 
           FROM ledger_entries 
           WHERE party_type IN (?, ?) AND party_id = ?
@@ -186,17 +192,17 @@ class Ledger {
         
         const newBal = balRow ? balRow.bal : 0.0;
         if (normPartyType === 'supplier') {
-          run('UPDATE suppliers SET total_due = ?, current_balance = ? WHERE id = ?', [newBal, newBal, party_id]);
+          await txRun('UPDATE suppliers SET total_due = ?, current_balance = ? WHERE id = ?', [newBal, newBal, party_id]);
         } else {
-          run('UPDATE customers SET current_balance = ? WHERE id = ?', [newBal, party_id]);
+          await txRun('UPDATE customers SET current_balance = ? WHERE id = ?', [newBal, party_id]);
         }
       } catch (syncErr) {
         console.warn('Balance cache sync notice:', syncErr.message);
       }
-
-      // Return refreshed statement
-      return this.getPartyStatement(normPartyType, party_id);
     });
+
+    // Return refreshed statement AFTER commit
+    return await this.getPartyStatement(normPartyType, party_id);
   }
 }
 

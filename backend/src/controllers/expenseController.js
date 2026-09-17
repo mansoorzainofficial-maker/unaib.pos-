@@ -3,7 +3,7 @@ const { query, get, run, transaction } = require('../config/db');
 /**
  * Get list of operational expenses
  */
-function getExpenses(req, res) {
+async function getExpenses(req, res) {
   try {
     const { category, start_date, end_date } = req.query;
 
@@ -32,8 +32,8 @@ function getExpenses(req, res) {
 
     sql += ` ORDER BY e.expense_date DESC, e.id DESC`;
 
-    const expenses = query(sql, params);
-    const totalAmount = expenses.reduce((sum, e) => sum + e.amount, 0);
+    const expenses = await query(sql, params);
+    const totalAmount = expenses.reduce((sum, e) => sum + Number(e.amount), 0);
 
     return res.json({ success: true, count: expenses.length, total: totalAmount, expenses });
   } catch (error) {
@@ -44,7 +44,7 @@ function getExpenses(req, res) {
 /**
  * Add a new expense
  */
-function createExpense(req, res) {
+async function createExpense(req, res) {
   try {
     const { category, amount, payment_method, description, expense_date } = req.body;
     const userId = req.user ? req.user.id : null;
@@ -57,15 +57,15 @@ function createExpense(req, res) {
     const payMethod = payment_method || 'cash';
     const numAmount = Number(amount);
 
-    const result = transaction(({ run }) => {
-      const ins = run(`
+    const result = await transaction(async ({ run: txRun }) => {
+      const ins = await txRun(`
         INSERT INTO expenses (user_id, category, amount, payment_method, description, expense_date)
         VALUES (?, ?, ?, ?, ?, ?)
       `, [userId, category, numAmount, payMethod, description || null, expDate]);
 
       // If paid out of Cash drawer, record on current open shift
       if (payMethod === 'cash') {
-        run(`
+        await txRun(`
           UPDATE cash_drawers
           SET cash_expenses = cash_expenses + ?,
               expected_closing_cash = expected_closing_cash - ?
@@ -89,26 +89,26 @@ function createExpense(req, res) {
 /**
  * Delete expense (Admin only)
  */
-function deleteExpense(req, res) {
+async function deleteExpense(req, res) {
   try {
     const { id } = req.params;
-    const existing = get('SELECT * FROM expenses WHERE id = ?', [id]);
+    const existing = await get('SELECT * FROM expenses WHERE id = ?', [id]);
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Expense record not found' });
     }
 
-    transaction(({ run }) => {
-      run('DELETE FROM expenses WHERE id = ?', [id]);
+    await transaction(async ({ run: txRun }) => {
+      await txRun('DELETE FROM expenses WHERE id = ?', [id]);
 
       // If paid out of cash drawer, refund amount back to active cash drawer
       if (existing.payment_method === 'cash') {
         const numAmount = Number(existing.amount) || 0;
-        run(`
+        await txRun(`
           UPDATE cash_drawers
-          SET cash_expenses = MAX(0, cash_expenses - ?),
+          SET cash_expenses = CASE WHEN cash_expenses - ? < 0 THEN 0 ELSE cash_expenses - ? END,
               expected_closing_cash = expected_closing_cash + ?
           WHERE status = 'open'
-        `, [numAmount, numAmount]);
+        `, [numAmount, numAmount, numAmount]);
       }
     });
 

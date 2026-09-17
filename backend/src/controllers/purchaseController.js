@@ -3,12 +3,12 @@ const { query, get, run, transaction } = require('../config/db');
 /**
  * Generate unique Purchase Order Number (e.g. PUR-20260909-0001)
  */
-function generatePurchaseNumber() {
+async function generatePurchaseNumber(dbGet = get) {
   const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
   const prefix = 'PUR';
 
-  const last = get(
-    `SELECT purchase_number FROM purchases WHERE purchase_number LIKE ? ORDER BY id DESC LIMIT 1`,
+  const last = await dbGet(
+    'SELECT purchase_number FROM purchases WHERE purchase_number LIKE ? ORDER BY id DESC LIMIT 1',
     [`${prefix}-${dateStr}-%`]
   );
 
@@ -25,7 +25,7 @@ function generatePurchaseNumber() {
  * Record a New Stock Purchase from Supplier
  * Atomically increases inventory, registers serial numbers, and updates supplier ledger
  */
-function createPurchase(req, res) {
+async function createPurchase(req, res) {
   try {
     const {
       supplier_id,
@@ -47,21 +47,22 @@ function createPurchase(req, res) {
       return res.status(400).json({ success: false, message: 'At least one purchase item is required' });
     }
 
-    const supplier = get('SELECT * FROM suppliers WHERE id = ?', [supplier_id]);
+    const supplier = await get('SELECT * FROM suppliers WHERE id = ?', [supplier_id]);
     if (!supplier) {
       return res.status(404).json({ success: false, message: 'Supplier not found' });
     }
 
     const purDate = purchase_date || new Date().toISOString().slice(0, 10);
-    const purchaseNumber = generatePurchaseNumber();
 
-    const result = transaction(({ query, get, run }) => {
+    const result = await transaction(async ({ query: txQuery, get: txGet, run: txRun }) => {
+      const purchaseNumber = await generatePurchaseNumber(txGet);
+
       // 1. Calculate subtotal and validate items
       let subtotal = 0;
       const processedItems = [];
 
       for (const it of items) {
-        const product = get('SELECT * FROM products WHERE id = ?', [it.product_id]);
+        const product = await txGet('SELECT * FROM products WHERE id = ?', [it.product_id]);
         if (!product) {
           throw new Error(`Product not found with ID ${it.product_id}`);
         }
@@ -100,7 +101,7 @@ function createPurchase(req, res) {
       const newSupBal = Math.round((currentSupBal + grandTotal - paid) * 100) / 100;
 
       // 2. Insert Purchase Header
-      const insPur = run(`
+      const insPur = await txRun(`
         INSERT INTO purchases (
           purchase_number, supplier_id, supplier_invoice_no, purchase_date,
           subtotal, discount, tax_rate, tax_amount, grand_total, paid_amount, balance_due,
@@ -129,7 +130,7 @@ function createPurchase(req, res) {
 
       // 3. Process Line Items: Add stock, update cost/sale prices, register serials
       for (const it of processedItems) {
-        const piRes = run(`
+        const piRes = await txRun(`
           INSERT INTO purchase_items (
             purchase_id, product_id, product_name, cost_price, sale_price,
             quantity, total_cost
@@ -146,7 +147,7 @@ function createPurchase(req, res) {
         const purchaseItemId = piRes.lastInsertRowid;
 
         // Increment stock and update prices on product
-        run(`
+        await txRun(`
           UPDATE products SET
             stock_quantity = stock_quantity + ?,
             cost_price = ?,
@@ -161,7 +162,7 @@ function createPurchase(req, res) {
           for (const sn of it.serials) {
             const clean = sn.trim();
             if (!clean) continue;
-            run(`
+            await txRun(`
               INSERT INTO serial_numbers (
                 serial_number, product_id, purchase_id, purchase_item_id, status
               ) VALUES (?, ?, ?, ?, 'in_stock')
@@ -175,7 +176,7 @@ function createPurchase(req, res) {
       }
 
       // 4. Update Supplier Khata / Ledger
-      run('UPDATE suppliers SET current_balance = ? WHERE id = ?', [newSupBal, supplier_id]);
+      await txRun('UPDATE suppliers SET current_balance = ? WHERE id = ?', [newSupBal, supplier_id]);
 
       let ledgerDesc = `Stock Purchase Bill #${supplier_invoice_no || purchaseNumber}`;
       if (excessPaid > 0) {
@@ -188,7 +189,7 @@ function createPurchase(req, res) {
 
       // Record in ledger: Purchase Bill (Credit increases what we owe, Debit reflects immediate payment)
       const cashAccId = (payment_method === 'cash' && paid > 0) ? 1 : null;
-      run(`
+      await txRun(`
         INSERT INTO ledger_entries (
           party_type, party_id, entry_type, reference_id, reference_no,
           debit, credit, account_id, description, entry_date
@@ -208,7 +209,7 @@ function createPurchase(req, res) {
       if (payment_method === 'cash' && paid > 0) {
         const cashierId = req.user?.id || 1;
         try {
-          run(`
+          await txRun(`
             UPDATE cash_drawers
             SET cash_expenses = cash_expenses + ?,
                 expected_closing_cash = expected_closing_cash - ?
@@ -242,7 +243,7 @@ function createPurchase(req, res) {
 /**
  * Get all purchases with filters
  */
-function getPurchases(req, res) {
+async function getPurchases(req, res) {
   try {
     const { supplier_id, search, start_date, end_date, status = 'active', limit = 100 } = req.query;
 
@@ -285,12 +286,12 @@ function getPurchases(req, res) {
     sql += ' ORDER BY p.id DESC LIMIT ?';
     params.push(Number(limit));
 
-    const purchases = query(sql, params);
+    const purchases = await query(sql, params);
 
     // Attach items summary so user sees what products are in each purchase directly
     const purchaseIds = purchases.map(p => p.id);
     if (purchaseIds.length > 0) {
-      const items = query(`
+      const items = await query(`
         SELECT purchase_id, product_name, quantity, total_cost 
         FROM purchase_items 
         WHERE purchase_id IN (${purchaseIds.map(() => '?').join(',')})
@@ -315,10 +316,10 @@ function getPurchases(req, res) {
 /**
  * Get detailed purchase record with line items
  */
-function getPurchaseDetails(req, res) {
+async function getPurchaseDetails(req, res) {
   try {
     const { id } = req.params;
-    const purchase = get(`
+    const purchase = await get(`
       SELECT p.*, s.name as supplier_name, s.contact_person, s.phone as supplier_phone, s.address as supplier_address
       FROM purchases p
       JOIN suppliers s ON p.supplier_id = s.id
@@ -329,7 +330,7 @@ function getPurchaseDetails(req, res) {
       return res.status(404).json({ success: false, message: 'Purchase record not found' });
     }
 
-    const items = query(`
+    const items = await query(`
       SELECT pi.*, p.barcode
       FROM purchase_items pi
       LEFT JOIN products p ON pi.product_id = p.id
@@ -337,7 +338,7 @@ function getPurchaseDetails(req, res) {
     `, [purchase.id]);
 
     // Fetch serial numbers created under this purchase
-    const serials = query('SELECT serial_number, product_id, purchase_item_id FROM serial_numbers WHERE purchase_id = ?', [purchase.id]);
+    const serials = await query('SELECT serial_number, product_id, purchase_item_id FROM serial_numbers WHERE purchase_id = ?', [purchase.id]);
 
     const itemsWithSerials = items.map(it => ({
       ...it,
@@ -356,7 +357,7 @@ function getPurchaseDetails(req, res) {
  * Void / Cancel a Stock Purchase (Return to Supplier)
  * Atomically deducts inventory stock, frees/marks serials as returned, and adjusts supplier ledger
  */
-function voidPurchase(req, res) {
+async function voidPurchase(req, res) {
   try {
     const purchaseId = Number(req.params.id);
     const { reason } = req.body;
@@ -368,9 +369,9 @@ function voidPurchase(req, res) {
     const voidReason = (reason && reason.trim()) ? reason.trim() : 'Stock returned to supplier / Voided by admin';
     const voidedBy = req.user ? req.user.id : 1;
 
-    const result = transaction(({ query, get, run }) => {
+    const result = await transaction(async ({ query: txQuery, get: txGet, run: txRun }) => {
       // 1. Fetch purchase record
-      const purchase = get('SELECT * FROM purchases WHERE id = ?', [purchaseId]);
+      const purchase = await txGet('SELECT * FROM purchases WHERE id = ?', [purchaseId]);
       if (!purchase) {
         throw new Error('Purchase record not found');
       }
@@ -379,12 +380,12 @@ function voidPurchase(req, res) {
       }
 
       // 2. Fetch line items
-      const items = query('SELECT * FROM purchase_items WHERE purchase_id = ?', [purchaseId]);
+      const items = await txQuery('SELECT * FROM purchase_items WHERE purchase_id = ?', [purchaseId]);
 
       // 3. Verify stock availability before deducting to prevent negative stock
       for (const it of items) {
         if (it.product_id) {
-          const prod = get('SELECT id, name, stock_quantity FROM products WHERE id = ?', [it.product_id]);
+          const prod = await txGet('SELECT id, name, stock_quantity FROM products WHERE id = ?', [it.product_id]);
           if (!prod) continue;
           if (prod.stock_quantity < it.quantity) {
             throw new Error(
@@ -397,22 +398,22 @@ function voidPurchase(req, res) {
       // 4. Deduct inventory stock
       for (const it of items) {
         if (it.product_id) {
-          run(
-            'UPDATE products SET stock_quantity = MAX(0, stock_quantity - ?), updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-            [it.quantity, it.product_id]
+          await txRun(
+            'UPDATE products SET stock_quantity = CASE WHEN stock_quantity - ? < 0 THEN 0 ELSE stock_quantity - ? END, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+            [it.quantity, it.quantity, it.product_id]
           );
         }
       }
 
       // 5. Update serial numbers to returned status
-      run(`
+      await txRun(`
         UPDATE serial_numbers SET
           status = 'returned'
         WHERE purchase_id = ? AND status = 'in_stock'
       `, [purchaseId]);
 
       // 6. Update Purchase Header
-      run(`
+      await txRun(`
         UPDATE purchases SET
           status = 'void',
           void_reason = ?,
@@ -422,18 +423,18 @@ function voidPurchase(req, res) {
       `, [voidReason, voidedBy, purchaseId]);
 
       // 7. Adjust Supplier Ledger
-      const supplier = get('SELECT * FROM suppliers WHERE id = ?', [purchase.supplier_id]);
+      const supplier = await txGet('SELECT * FROM suppliers WHERE id = ?', [purchase.supplier_id]);
       if (supplier) {
         const grandTotal = Number(purchase.grand_total) || 0;
         const paid = Number(purchase.paid_amount) || 0;
         const netPurchaseDelta = grandTotal - paid;
         const newSupBalance = Math.round(((supplier.current_balance || 0) - netPurchaseDelta) * 100) / 100;
 
-        run('UPDATE suppliers SET current_balance = ? WHERE id = ?', [newSupBalance, purchase.supplier_id]);
+        await txRun('UPDATE suppliers SET current_balance = ? WHERE id = ?', [newSupBalance, purchase.supplier_id]);
 
         // Log reversing entry in ledger: Supplier Void
         const cashAccId = (purchase.payment_method === 'cash' && paid > 0) ? 1 : null;
-        run(`
+        await txRun(`
           INSERT INTO ledger_entries (
             party_type, party_id, entry_type, reference_id, reference_no,
             debit, credit, account_id, description, entry_date
@@ -452,12 +453,12 @@ function voidPurchase(req, res) {
       // 8. If paid in cash, refund back to open cash drawer
       if (purchase.payment_method === 'cash' && Number(purchase.paid_amount || 0) > 0) {
         const cashRefund = Number(purchase.paid_amount);
-        run(`
+        await txRun(`
           UPDATE cash_drawers
-          SET cash_expenses = MAX(0, cash_expenses - ?),
+          SET cash_expenses = CASE WHEN cash_expenses - ? < 0 THEN 0 ELSE cash_expenses - ? END,
               expected_closing_cash = expected_closing_cash + ?
           WHERE status = 'open'
-        `, [cashRefund, cashRefund]);
+        `, [cashRefund, cashRefund, cashRefund]);
       }
 
       return {

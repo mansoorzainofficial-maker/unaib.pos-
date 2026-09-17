@@ -1,4 +1,4 @@
-﻿const Grn = require('../models/Grn');
+const Grn = require('../models/Grn');
 
 /**
  * Get all GRNs
@@ -6,7 +6,7 @@
  */
 async function getAllGrns(req, res) {
   try {
-    const grns = Grn.getAll();
+    const grns = await Grn.getAll();
     res.json({
       success: true,
       grns
@@ -28,7 +28,7 @@ async function getAllGrns(req, res) {
 async function getGrnById(req, res) {
   try {
     const { id } = req.params;
-    const grn = Grn.getById(id);
+    const grn = await Grn.getById(id);
 
     if (!grn) {
       return res.status(404).json({
@@ -105,27 +105,26 @@ async function createGrn(req, res) {
       if (it.unit_cost === undefined || it.unit_cost === null || Number(it.unit_cost) < 0) {
         return res.status(400).json({
           success: false,
-          error: `Row #${i + 1}: Unit cost cannot be negative`
+          error: `Row #${i + 1}: Valid unit cost is required`
         });
       }
     }
 
-    // Call Model with ACID transaction
-    const newGrn = Grn.create({
+    const createdGrn = await Grn.create({
       supplier_id: Number(supplier_id),
       payment_type,
       received_date,
-      notes: notes ? notes.trim() : null,
+      notes: notes && notes.trim() ? notes.trim() : null,
       items
     });
 
     res.status(201).json({
       success: true,
-      message: `GRN #${newGrn.grn_number} created successfully! Stock and accounting updated.`,
-      grn: newGrn
+      message: `Goods Received Note ${createdGrn.grn_number} created successfully`,
+      grn: createdGrn
     });
   } catch (err) {
-    console.error('Error creating GRN (Transaction Rolled Back):', err);
+    console.error('Error creating GRN:', err);
     res.status(400).json({
       success: false,
       error: err.message || 'Failed to create GRN'

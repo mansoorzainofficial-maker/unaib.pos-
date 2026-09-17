@@ -6,11 +6,11 @@ const Account = require('../models/Account');
  */
 async function getAccounts(req, res) {
   try {
-    const rawAccounts = Account.getAll();
-    const accounts = rawAccounts.map(acc => ({
+    const rawAccounts = await Account.getAll();
+    const accounts = await Promise.all(rawAccounts.map(async acc => ({
       ...acc,
-      has_transactions: Account.hasTransactions(acc.id)
-    }));
+      has_transactions: await Account.hasTransactions(acc.id)
+    })));
 
     res.json({
       success: true,
@@ -32,7 +32,7 @@ async function getAccounts(req, res) {
  */
 async function getAccountById(req, res) {
   try {
-    const account = Account.getById(req.params.id);
+    const account = await Account.getById(req.params.id);
     if (!account) {
       return res.status(404).json({
         success: false,
@@ -44,7 +44,7 @@ async function getAccountById(req, res) {
       success: true,
       account: {
         ...account,
-        has_transactions: Account.hasTransactions(account.id)
+        has_transactions: await Account.hasTransactions(account.id)
       }
     });
   } catch (err) {
@@ -81,7 +81,7 @@ async function createAccount(req, res) {
     }
 
     // Check duplicate name
-    const existing = Account.getByName(name.trim());
+    const existing = await Account.getByName(name.trim());
     if (existing) {
       return res.status(400).json({
         success: false,
@@ -89,7 +89,7 @@ async function createAccount(req, res) {
       });
     }
 
-    const account = Account.create({
+    const account = await Account.create({
       name: name.trim(),
       type: type.toLowerCase(),
       account_number: account_number && account_number.trim() ? account_number.trim() : null,
@@ -119,7 +119,7 @@ async function createAccount(req, res) {
 async function updateAccount(req, res) {
   try {
     const id = Number(req.params.id);
-    const existing = Account.getById(id);
+    const existing = await Account.getById(id);
     if (!existing) {
       return res.status(404).json({
         success: false,
@@ -145,7 +145,7 @@ async function updateAccount(req, res) {
     }
 
     // Check duplicate name for other accounts
-    const duplicate = Account.getByName(name.trim(), id);
+    const duplicate = await Account.getByName(name.trim(), id);
     if (duplicate) {
       return res.status(400).json({
         success: false,
@@ -153,7 +153,7 @@ async function updateAccount(req, res) {
       });
     }
 
-    const updated = Account.update(id, {
+    const updated = await Account.update(id, {
       name: name.trim(),
       type: type.toLowerCase(),
       account_number: account_number && account_number.trim() ? account_number.trim() : null,
@@ -182,7 +182,7 @@ async function updateAccount(req, res) {
 async function deleteAccount(req, res) {
   try {
     const id = Number(req.params.id);
-    const account = Account.getById(id);
+    const account = await Account.getById(id);
     if (!account) {
       return res.status(404).json({
         success: false,
@@ -199,7 +199,7 @@ async function deleteAccount(req, res) {
     }
 
     // Check if account has transactions in ledger or transactions tables
-    if (Account.hasTransactions(id)) {
+    if (await Account.hasTransactions(id)) {
       return res.status(400).json({
         success: false,
         error: 'Ye account delete nahi ho sakta, iski transaction history hai',
@@ -207,7 +207,7 @@ async function deleteAccount(req, res) {
       });
     }
 
-    Account.delete(id);
+    await Account.delete(id);
 
     res.json({
       success: true,

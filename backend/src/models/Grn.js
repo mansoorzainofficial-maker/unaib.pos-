@@ -1,8 +1,8 @@
 const { query, get, run, transaction } = require('../config/db');
 
 class Grn {
-  static getAll() {
-    return query(`
+  static async getAll() {
+    return await query(`
       SELECT 
         g.id,
         g.grn_number,
@@ -23,8 +23,8 @@ class Grn {
     `);
   }
 
-  static getById(id) {
-    const header = get(`
+  static async getById(id) {
+    const header = await get(`
       SELECT 
         g.id,
         g.grn_number,
@@ -48,7 +48,7 @@ class Grn {
 
     if (!header) return null;
 
-    const items = query(`
+    const items = await query(`
       SELECT 
         gi.id,
         gi.grn_id,
@@ -71,8 +71,8 @@ class Grn {
     };
   }
 
-  static generateNextGrnNumber() {
-    const last = get('SELECT grn_number FROM grn ORDER BY id DESC LIMIT 1');
+  static async generateNextGrnNumber(dbGet = get) {
+    const last = await dbGet('SELECT grn_number FROM grn ORDER BY id DESC LIMIT 1');
     if (!last || !last.grn_number) {
       return 'GRN-0001';
     }
@@ -81,15 +81,15 @@ class Grn {
       const nextNum = parseInt(match[1], 10) + 1;
       return `GRN-${String(nextNum).padStart(4, '0')}`;
     }
-    const countRow = get('SELECT COUNT(*) as cnt FROM grn');
-    const nextCount = (countRow?.cnt || 0) + 1;
+    const countRow = await dbGet('SELECT COUNT(*) as cnt FROM grn');
+    const nextCount = (Number(countRow?.cnt) || 0) + 1;
     return `GRN-${String(nextCount).padStart(4, '0')}`;
   }
 
   /**
    * Create GRN with Atomic SQL Transaction
    */
-  static create({ supplier_id, payment_type, received_date, notes = null, items = [] }) {
+  static async create({ supplier_id, payment_type, received_date, notes = null, items = [] }) {
     if (!supplier_id) throw new Error('Supplier is required');
     if (!payment_type || !['cash', 'credit'].includes(payment_type)) {
       throw new Error('Valid payment type ("cash" or "credit") is required');
@@ -99,15 +99,17 @@ class Grn {
       throw new Error('At least one product item is required in GRN');
     }
 
-    return transaction(() => {
+    const grnId = await transaction(async ({ query: txQuery, get: txGet, run: txRun }) => {
       // 1. Verify supplier
-      const supplier = get('SELECT id, name, total_due, current_balance FROM suppliers WHERE id = ?', [supplier_id]);
+      const supplier = await txGet('SELECT id, name, total_due, current_balance FROM suppliers WHERE id = ?', [supplier_id]);
       if (!supplier) throw new Error(`Supplier with ID ${supplier_id} not found`);
 
       // 2. Validate and calculate items total
       let calculatedTotal = 0;
-      const validatedItems = items.map((item, idx) => {
-        const product = get('SELECT id, name, stock_quantity, cost_price FROM products WHERE id = ?', [item.product_id]);
+      const validatedItems = [];
+      for (let idx = 0; idx < items.length; idx++) {
+        const item = items[idx];
+        const product = await txGet('SELECT id, name, stock_quantity, cost_price FROM products WHERE id = ?', [item.product_id]);
         if (!product) {
           throw new Error(`Item #${idx + 1}: Product with ID ${item.product_id} does not exist`);
         }
@@ -126,39 +128,37 @@ class Grn {
         const lineTotal = Math.round(qtyReceived * unitCost * 100) / 100;
         calculatedTotal += lineTotal;
 
-        return {
+        validatedItems.push({
           product_id: product.id,
           product_name: product.name,
           quantity_ordered: qtyOrdered,
           quantity_received: qtyReceived,
           unit_cost: unitCost,
           total_cost: lineTotal
-        };
-      });
+        });
+      }
 
       calculatedTotal = Math.round(calculatedTotal * 100) / 100;
 
-      // 3. Generate sequential GRN Number
-      const grnNumber = this.generateNextGrnNumber();
+      // 3. Generate sequential GRN Number using transaction-scoped get
+      const grnNumber = await this.generateNextGrnNumber(txGet);
 
       // 4. Insert GRN header
-      const grnRes = run(`
+      const grnRes = await txRun(`
         INSERT INTO grn (grn_number, supplier_id, total_amount, payment_type, status, received_date, notes)
         VALUES (?, ?, ?, ?, 'completed', ?, ?)
       `, [grnNumber, supplier_id, calculatedTotal, payment_type, received_date, notes]);
 
-      const grnId = grnRes.lastInsertRowid;
+      const newGrnId = grnRes.lastInsertRowid;
 
       // 5. Insert GRN Items & Update Product Stock
       for (const item of validatedItems) {
-        run(`
+        await txRun(`
           INSERT INTO grn_items (grn_id, product_id, quantity_ordered, quantity_received, unit_cost, total_cost)
           VALUES (?, ?, ?, ?, ?, ?)
-        `, [grnId, item.product_id, item.quantity_ordered, item.quantity_received, item.unit_cost, item.total_cost]);
+        `, [newGrnId, item.product_id, item.quantity_ordered, item.quantity_received, item.unit_cost, item.total_cost]);
 
-        // b) Har product ka stock (products.stock_quantity) quantity_received ke barabar BADHAO
-        // Also update product's cost_price to latest received unit_cost
-        run(`
+        await txRun(`
           UPDATE products 
           SET 
             stock_quantity = stock_quantity + ?,
@@ -170,9 +170,7 @@ class Grn {
 
       // 6. Handle Payment Type
       if (payment_type === 'credit') {
-        // c) Agar payment_type = "credit" hai:
-        // suppliers.total_due amount se GRN ka total_amount BADHAO
-        run(`
+        await txRun(`
           UPDATE suppliers 
           SET 
             total_due = COALESCE(total_due, 0.0) + ?,
@@ -180,32 +178,39 @@ class Grn {
           WHERE id = ?
         `, [calculatedTotal, calculatedTotal, supplier_id]);
 
-        // Insert ledger entry: entry_type 'grn', debit: calculatedTotal, account_id: NULL
         try {
-          run(`
+          await txRun(`
             INSERT INTO ledger_entries (
-              party_type, party_id, entry_type, reference_id, reference_no, 
+              party_type, party_id, entry_type, reference_no, 
               debit, credit, account_id, description, entry_date
             ) VALUES (
-              'supplier', ?, 'grn', ?, ?,
+              'supplier', ?, 'grn', ?,
               ?, 0.0, NULL, ?, ?
             )
-          `, [supplier_id, grnId, grnNumber, calculatedTotal, `Goods Received Note: ${grnNumber}`, received_date]);
+          `, [supplier_id, grnNumber, calculatedTotal, `Goods Received Note: ${grnNumber}`, received_date]);
         } catch (ledgerErr) {
           console.warn('Ledger entry log notice:', ledgerErr.message);
         }
-
       } else if (payment_type === 'cash') {
-        // d) Agar payment_type = "cash" hai:
-        // transactions table mein entry karo (type: 'debit', category: 'supplier_payment', amount: total_amount)
-        run(`
-          INSERT INTO transactions (type, category, amount, reference_id, reference_type, description)
-          VALUES ('debit', 'supplier_payment', ?, ?, 'grn', ?)
-        `, [calculatedTotal, grnId, `Paid cash for ${grnNumber} to ${supplier.name}`]);
+        // Find default cash account to deduct balance
+        const defaultAcc = await txGet("SELECT id, current_balance FROM accounts WHERE is_default = 1 LIMIT 1");
+        if (defaultAcc) {
+          await txRun(`
+            INSERT INTO accounts_ledger (
+              account_id, entry_type, reference_no, debit, credit, balance_after, description
+            ) VALUES (
+              ?, 'grn_cash', ?, 0.0, ?, (SELECT current_balance - ? FROM accounts WHERE id = ?), ?
+            )
+          `, [defaultAcc.id, grnNumber, calculatedTotal, calculatedTotal, defaultAcc.id, `Paid cash for ${grnNumber} to ${supplier.name}`]);
+          await txRun('UPDATE accounts SET current_balance = current_balance - ? WHERE id = ?', [calculatedTotal, defaultAcc.id]);
+        }
       }
 
-      return this.getById(grnId);
+      return newGrnId;
     });
+
+    // 7. Read full record AFTER transaction commits
+    return await this.getById(grnId);
   }
 }
 

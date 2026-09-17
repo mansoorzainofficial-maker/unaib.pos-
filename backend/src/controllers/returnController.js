@@ -1,10 +1,10 @@
 const { query, get, run, transaction } = require('../config/db');
 
-function generateSaleReturnNumber() {
+async function generateSaleReturnNumber(dbGet = get) {
   const now = new Date();
   const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
-  const last = get(
-    `SELECT return_number FROM sales_returns WHERE return_number LIKE ? ORDER BY id DESC LIMIT 1`,
+  const last = await dbGet(
+    'SELECT return_number FROM sales_returns WHERE return_number LIKE ? ORDER BY id DESC LIMIT 1',
     [`SR-${dateStr}-%`]
   );
   let seq = 1;
@@ -15,11 +15,11 @@ function generateSaleReturnNumber() {
   return `SR-${dateStr}-${String(seq).padStart(4, '0')}`;
 }
 
-function generatePurchaseReturnNumber() {
+async function generatePurchaseReturnNumber(dbGet = get) {
   const now = new Date();
   const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
-  const last = get(
-    `SELECT return_number FROM purchase_returns WHERE return_number LIKE ? ORDER BY id DESC LIMIT 1`,
+  const last = await dbGet(
+    'SELECT return_number FROM purchase_returns WHERE return_number LIKE ? ORDER BY id DESC LIMIT 1',
     [`PR-${dateStr}-%`]
   );
   let seq = 1;
@@ -33,7 +33,7 @@ function generatePurchaseReturnNumber() {
 /**
  * 1. Process Sale Return (سیل واپسی)
  */
-function createSaleReturn(req, res) {
+async function createSaleReturn(req, res) {
   try {
     const {
       invoice_id,
@@ -51,14 +51,14 @@ function createSaleReturn(req, res) {
     }
 
     const cashierId = req.user ? req.user.id : 1;
-    const returnNumber = generateSaleReturnNumber();
 
-    const result = transaction(({ query, get, run }) => {
+    const result = await transaction(async ({ query: txQuery, get: txGet, run: txRun }) => {
+      const returnNumber = await generateSaleReturnNumber(txGet);
       let totalRefund = 0;
       const processedItems = [];
 
       for (const item of items) {
-        const prod = get('SELECT id, name, stock_quantity, sale_price FROM products WHERE id = ?', [item.product_id]);
+        const prod = await txGet('SELECT id, name, stock_quantity, sale_price FROM products WHERE id = ?', [item.product_id]);
         if (!prod) throw new Error(`Product not found with ID ${item.product_id}`);
 
         const qty = Number(item.quantity) || 1;
@@ -77,7 +77,7 @@ function createSaleReturn(req, res) {
       }
 
       // Insert return header
-      const returnInsert = run(`
+      const returnInsert = await txRun(`
         INSERT INTO sales_returns (
           return_number, invoice_id, invoice_number, customer_id,
           customer_name, customer_phone, refund_mode, total_refund_amount,
@@ -100,7 +100,7 @@ function createSaleReturn(req, res) {
 
       // Insert return items & restore inventory stock
       for (const pItem of processedItems) {
-        run(`
+        await txRun(`
           INSERT INTO sales_return_items (
             sales_return_id, product_id, product_name, quantity,
             unit_price, total_amount, serial_numbers
@@ -116,7 +116,7 @@ function createSaleReturn(req, res) {
         ]);
 
         // Restore stock
-        run('UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?', [
+        await txRun('UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?', [
           pItem.quantity,
           pItem.product_id
         ]);
@@ -124,7 +124,7 @@ function createSaleReturn(req, res) {
         // If serial numbers provided, restore status to in_stock
         if (Array.isArray(pItem.serial_numbers)) {
           for (const sn of pItem.serial_numbers) {
-            run(`
+            await txRun(`
               UPDATE serial_numbers SET
                 status = 'in_stock',
                 customer_id = NULL,
@@ -140,12 +140,12 @@ function createSaleReturn(req, res) {
       if (customer_id) {
         if (refund_mode === 'khata_credit') {
           // Reduce customer's outstanding balance
-          run('UPDATE customers SET current_balance = current_balance - ? WHERE id = ?', [
+          await txRun('UPDATE customers SET current_balance = current_balance - ? WHERE id = ?', [
             totalRefund,
             customer_id
           ]);
 
-          run(`
+          await txRun(`
             INSERT INTO ledger_entries (
               party_type, party_id, entry_type, reference_id, reference_no,
               debit, credit, account_id, description, entry_date
@@ -159,7 +159,7 @@ function createSaleReturn(req, res) {
           ]);
         } else {
           // Cash refunded to customer
-          run(`
+          await txRun(`
             INSERT INTO ledger_entries (
               party_type, party_id, entry_type, reference_id, reference_no,
               debit, credit, account_id, description, entry_date
@@ -175,7 +175,7 @@ function createSaleReturn(req, res) {
 
       // Cash Drawer: If cash was refunded, deduct from open drawer
       if (refund_mode === 'cash') {
-        run(`
+        await txRun(`
           UPDATE cash_drawers
           SET cash_expenses = cash_expenses + ?,
               expected_closing_cash = expected_closing_cash - ?
@@ -200,7 +200,7 @@ function createSaleReturn(req, res) {
 /**
  * 2. Process Purchase Return (خریداری واپسی / سپلائر کو واپسی)
  */
-function createPurchaseReturn(req, res) {
+async function createPurchaseReturn(req, res) {
   try {
     const {
       purchase_id,
@@ -220,14 +220,14 @@ function createPurchaseReturn(req, res) {
     }
 
     const cashierId = req.user ? req.user.id : 1;
-    const returnNumber = generatePurchaseReturnNumber();
 
-    const result = transaction(({ query, get, run }) => {
+    const result = await transaction(async ({ query: txQuery, get: txGet, run: txRun }) => {
+      const returnNumber = await generatePurchaseReturnNumber(txGet);
       let totalAmount = 0;
       const processedItems = [];
 
       for (const item of items) {
-        const prod = get('SELECT id, name, stock_quantity, cost_price FROM products WHERE id = ?', [item.product_id]);
+        const prod = await txGet('SELECT id, name, stock_quantity, cost_price FROM products WHERE id = ?', [item.product_id]);
         if (!prod) throw new Error(`Product not found with ID ${item.product_id}`);
 
         const qty = Number(item.quantity) || 1;
@@ -249,7 +249,7 @@ function createPurchaseReturn(req, res) {
       }
 
       // Insert purchase return header
-      const returnInsert = run(`
+      const returnInsert = await txRun(`
         INSERT INTO purchase_returns (
           return_number, purchase_id, purchase_number, supplier_id,
           supplier_name, total_amount, refund_mode, reason, cashier_id
@@ -270,7 +270,7 @@ function createPurchaseReturn(req, res) {
 
       // Insert items & reduce stock
       for (const pItem of processedItems) {
-        run(`
+        await txRun(`
           INSERT INTO purchase_return_items (
             purchase_return_id, product_id, product_name, quantity,
             unit_cost, total_amount
@@ -285,7 +285,7 @@ function createPurchaseReturn(req, res) {
         ]);
 
         // Reduce stock (goods sent back to vendor)
-        run('UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?', [
+        await txRun('UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?', [
           pItem.quantity,
           pItem.product_id
         ]);
@@ -293,12 +293,12 @@ function createPurchaseReturn(req, res) {
 
       // Adjust supplier ledger
       if (refund_mode === 'deduct_balance') {
-        run('UPDATE suppliers SET current_balance = current_balance - ? WHERE id = ?', [
+        await txRun('UPDATE suppliers SET current_balance = current_balance - ? WHERE id = ?', [
           totalAmount,
           supplier_id
         ]);
 
-        run(`
+        await txRun(`
           INSERT INTO ledger_entries (
             party_type, party_id, entry_type, reference_id, reference_no,
             debit, credit, account_id, description, entry_date
@@ -312,7 +312,7 @@ function createPurchaseReturn(req, res) {
         ]);
       } else {
         // Cash received back from supplier
-        run(`
+        await txRun(`
           INSERT INTO ledger_entries (
             party_type, party_id, entry_type, reference_id, reference_no,
             debit, credit, account_id, description, entry_date
@@ -325,7 +325,7 @@ function createPurchaseReturn(req, res) {
         ]);
 
         // Add to cash drawer
-        run(`
+        await txRun(`
           UPDATE cash_drawers
           SET cash_sales = cash_sales + ?,
               expected_closing_cash = expected_closing_cash + ?
@@ -350,9 +350,9 @@ function createPurchaseReturn(req, res) {
 /**
  * 3. Get Sale Returns List
  */
-function getSaleReturns(req, res) {
+async function getSaleReturns(req, res) {
   try {
-    const returns = query(`
+    const returns = await query(`
       SELECT sr.*, u.full_name as cashier_name
       FROM sales_returns sr
       LEFT JOIN users u ON sr.cashier_id = u.id
@@ -360,7 +360,7 @@ function getSaleReturns(req, res) {
     `);
 
     for (const r of returns) {
-      r.items = query('SELECT * FROM sales_return_items WHERE sales_return_id = ?', [r.id]);
+      r.items = await query('SELECT * FROM sales_return_items WHERE sales_return_id = ?', [r.id]);
     }
 
     res.json({ success: true, count: returns.length, returns });
@@ -372,9 +372,9 @@ function getSaleReturns(req, res) {
 /**
  * 4. Get Purchase Returns List
  */
-function getPurchaseReturns(req, res) {
+async function getPurchaseReturns(req, res) {
   try {
-    const returns = query(`
+    const returns = await query(`
       SELECT pr.*, u.full_name as cashier_name
       FROM purchase_returns pr
       LEFT JOIN users u ON pr.cashier_id = u.id
@@ -382,7 +382,7 @@ function getPurchaseReturns(req, res) {
     `);
 
     for (const r of returns) {
-      r.items = query('SELECT * FROM purchase_return_items WHERE purchase_return_id = ?', [r.id]);
+      r.items = await query('SELECT * FROM purchase_return_items WHERE purchase_return_id = ?', [r.id]);
     }
 
     res.json({ success: true, count: returns.length, returns });

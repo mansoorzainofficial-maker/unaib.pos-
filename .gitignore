@@ -12,11 +12,17 @@ logs/
 .DS_Store
 Thumbs.db
 
-# Environment variables
+# Environment variables & secrets (NEVER COMMIT)
 .env
+.env.*
+*.env
+backend/.env
+backend/.env.*
 
 # Backups & SQLite temporary files
 backups/
 *.sqlite-wal
 *.sqlite-shm
+*.sqlite
+*.db
 

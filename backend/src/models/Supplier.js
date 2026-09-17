@@ -1,8 +1,8 @@
-﻿const { query, get, run } = require('../config/db');
+const { query, get, run } = require('../config/db');
 
 class Supplier {
-  static getAll() {
-    return query(`
+  static async getAll() {
+    return await query(`
       SELECT 
         id, 
         name, 
@@ -17,8 +17,8 @@ class Supplier {
     `);
   }
 
-  static getById(id) {
-    return get(`
+  static async getById(id) {
+    return await get(`
       SELECT 
         id, 
         name, 
@@ -33,17 +33,17 @@ class Supplier {
     `, [id]);
   }
 
-  static create({ name, contact_person = null, phone = null, email = null, address = null, total_due = 0.0 }) {
-    const res = run(`
+  static async create({ name, contact_person = null, phone = null, email = null, address = null, total_due = 0.0 }) {
+    const res = await run(`
       INSERT INTO suppliers (name, contact_person, phone, email, address, total_due, current_balance)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `, [name, contact_person, phone, email, address, total_due, total_due]);
 
-    return this.getById(res.lastInsertRowid);
+    return await this.getById(res.lastInsertRowid);
   }
 
-  static update(id, { name, contact_person = null, phone = null, email = null, address = null }) {
-    run(`
+  static async update(id, { name, contact_person = null, phone = null, email = null, address = null }) {
+    await run(`
       UPDATE suppliers 
       SET 
         name = ?, 
@@ -54,36 +54,36 @@ class Supplier {
       WHERE id = ?
     `, [name, contact_person, phone, email, address, id]);
 
-    return this.getById(id);
+    return await this.getById(id);
   }
 
-  static delete(id) {
+  static async delete(id) {
     // Check if supplier has any GRNs
-    const grnCheck = get('SELECT COUNT(*) as count FROM grn WHERE supplier_id = ?', [id]);
-    if (grnCheck && grnCheck.count > 0) {
+    const grnCheck = await get('SELECT COUNT(*) as count FROM grn WHERE supplier_id = ?', [id]);
+    if (grnCheck && Number(grnCheck.count) > 0) {
       throw new Error(`Supplier cannot be deleted because they have ${grnCheck.count} associated GRN record(s).`);
     }
 
     // Check if supplier has any purchases
-    const purchaseCheck = get('SELECT COUNT(*) as count FROM purchases WHERE supplier_id = ?', [id]);
-    if (purchaseCheck && purchaseCheck.count > 0) {
+    const purchaseCheck = await get('SELECT COUNT(*) as count FROM purchases WHERE supplier_id = ?', [id]);
+    if (purchaseCheck && Number(purchaseCheck.count) > 0) {
       throw new Error(`Supplier cannot be deleted because they have ${purchaseCheck.count} associated purchase invoice(s).`);
     }
 
-    const res = run('DELETE FROM suppliers WHERE id = ?', [id]);
+    const res = await run('DELETE FROM suppliers WHERE id = ?', [id]);
     return res.changes > 0;
   }
 
-  static updateDue(id, amountChange) {
-    run(`
+  static async updateDue(id, amountChange) {
+    await run(`
       UPDATE suppliers 
       SET 
-        total_due = COALESCE(total_due, 0.0) + ?,
-        current_balance = COALESCE(current_balance, 0.0) + ?
+        total_due = COALESCE(total_due, current_balance, 0.0) + ?,
+        current_balance = COALESCE(current_balance, total_due, 0.0) + ?
       WHERE id = ?
     `, [amountChange, amountChange, id]);
 
-    return this.getById(id);
+    return await this.getById(id);
   }
 }
 

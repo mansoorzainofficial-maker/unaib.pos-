@@ -3,9 +3,9 @@ const { query, get, run } = require('../config/db');
 /**
  * Helper to calculate mathematically exact cash drawer inflows and outflows for a shift
  */
-function calculateShiftCashFlow(cashierId, openedAt, openingCash = 0) {
+async function calculateShiftCashFlow(cashierId, openedAt, openingCash = 0) {
   // 1. Net Cash from Sales: paid_amount minus change returned on completed cash sales
-  const salesRow = get(`
+  const salesRow = await get(`
     SELECT COALESCE(SUM(paid_amount - change_amount), 0) as cash_from_sales
     FROM invoices
     WHERE payment_method = 'cash'
@@ -14,7 +14,7 @@ function calculateShiftCashFlow(cashierId, openedAt, openingCash = 0) {
   `, [openedAt]);
 
   // 2. Customer Khata Recoveries in Cash (entry_type = 'payment' or 'payment_received', account type = 'cash')
-  const customerRecoveryRow = get(`
+  const customerRecoveryRow = await get(`
     SELECT COALESCE(SUM(le.credit), 0) as cash_from_recoveries
     FROM ledger_entries le
     JOIN accounts a ON le.account_id = a.id
@@ -25,7 +25,7 @@ function calculateShiftCashFlow(cashierId, openedAt, openingCash = 0) {
   `, [openedAt]);
 
   // 3. Purchase Returns cash received into drawer (Inflow)
-  const purchaseReturnRow = get(`
+  const purchaseReturnRow = await get(`
     SELECT COALESCE(SUM(total_amount), 0) as cash_from_purchase_returns
     FROM purchase_returns
     WHERE refund_mode = 'cash'
@@ -33,7 +33,7 @@ function calculateShiftCashFlow(cashierId, openedAt, openingCash = 0) {
   `, [openedAt]);
 
   // 4. Shop Operational Expenses paid in Cash (Outflow)
-  const expenseRow = get(`
+  const expenseRow = await get(`
     SELECT COALESCE(SUM(amount), 0) as cash_to_expenses
     FROM expenses
     WHERE payment_method = 'cash'
@@ -41,7 +41,7 @@ function calculateShiftCashFlow(cashierId, openedAt, openingCash = 0) {
   `, [openedAt]);
 
   // 5. Supplier Purchases paid in Cash (Outflow)
-  const purchaseRow = get(`
+  const purchaseRow = await get(`
     SELECT COALESCE(SUM(paid_amount), 0) as cash_to_purchases
     FROM purchases
     WHERE payment_method = 'cash'
@@ -50,7 +50,7 @@ function calculateShiftCashFlow(cashierId, openedAt, openingCash = 0) {
   `, [openedAt]);
 
   // 6. Supplier Ledger Payments made in Cash (Outflow)
-  const supplierPaymentRow = get(`
+  const supplierPaymentRow = await get(`
     SELECT COALESCE(SUM(CASE WHEN le.credit > 0 THEN le.credit ELSE le.debit END), 0) as cash_to_suppliers
     FROM ledger_entries le
     JOIN accounts a ON le.account_id = a.id
@@ -61,7 +61,7 @@ function calculateShiftCashFlow(cashierId, openedAt, openingCash = 0) {
   `, [openedAt]);
 
   // 7. Sale Returns cash refunded to customer (Outflow)
-  const saleReturnRow = get(`
+  const saleReturnRow = await get(`
     SELECT COALESCE(SUM(total_refund_amount), 0) as cash_to_sale_refunds
     FROM sales_returns
     WHERE refund_mode = 'cash'
@@ -100,11 +100,11 @@ function calculateShiftCashFlow(cashierId, openedAt, openingCash = 0) {
 /**
  * Get current open cash drawer session for the cashier
  */
-function getCurrentShift(req, res) {
+async function getCurrentShift(req, res) {
   try {
     const cashierId = req.user ? req.user.id : 1;
 
-    const drawer = get(`
+    const drawer = await get(`
       SELECT cd.*, u.full_name as cashier_name
       FROM cash_drawers cd
       JOIN users u ON cd.cashier_id = u.id
@@ -117,7 +117,7 @@ function getCurrentShift(req, res) {
     }
 
     // Calculate real-time comprehensive cash flow
-    const cashFlow = calculateShiftCashFlow(cashierId, drawer.opened_at, drawer.opening_cash);
+    const cashFlow = await calculateShiftCashFlow(cashierId, drawer.opened_at, drawer.opening_cash);
 
     return res.json({
       success: true,
@@ -135,7 +135,7 @@ function getCurrentShift(req, res) {
 /**
  * Open a new shift with starting cash float
  */
-function openShift(req, res) {
+async function openShift(req, res) {
   try {
     const cashierId = req.user ? req.user.id : 1;
     const { opening_cash, notes } = req.body;
@@ -145,14 +145,14 @@ function openShift(req, res) {
     }
 
     // Check if there is already an open shift
-    const existing = get("SELECT id FROM cash_drawers WHERE cashier_id = ? AND status = 'open'", [cashierId]);
+    const existing = await get("SELECT id FROM cash_drawers WHERE cashier_id = ? AND status = 'open'", [cashierId]);
     if (existing) {
       return res.status(400).json({ success: false, message: 'You already have an active open shift session' });
     }
 
     const startAmount = Number(opening_cash);
 
-    const result = run(`
+    const result = await run(`
       INSERT INTO cash_drawers (
         cashier_id, opening_cash, cash_sales, cash_expenses,
         expected_closing_cash, status, notes
@@ -172,7 +172,7 @@ function openShift(req, res) {
 /**
  * Close shift and reconcile cash count
  */
-function closeShift(req, res) {
+async function closeShift(req, res) {
   try {
     const cashierId = req.user ? req.user.id : 1;
     const { actual_closing_cash, notes } = req.body;
@@ -181,17 +181,17 @@ function closeShift(req, res) {
       return res.status(400).json({ success: false, message: 'Actual closing cash count is required' });
     }
 
-    const drawer = get("SELECT * FROM cash_drawers WHERE cashier_id = ? AND status = 'open'", [cashierId]);
+    const drawer = await get("SELECT * FROM cash_drawers WHERE cashier_id = ? AND status = 'open'", [cashierId]);
     if (!drawer) {
       return res.status(404).json({ success: false, message: 'No open shift found to close' });
     }
 
     // Calculate real-time exact cash flow
-    const cashFlow = calculateShiftCashFlow(cashierId, drawer.opened_at, drawer.opening_cash);
+    const cashFlow = await calculateShiftCashFlow(cashierId, drawer.opened_at, drawer.opening_cash);
     const actualClosing = Math.round(Number(actual_closing_cash) * 100) / 100;
-    const discrepancy = Math.round((actualClosing - cashFlow.expected_closing_cash) * 100) / 100; // > 0 overage, < 0 shortage
+    const discrepancy = Math.round((actualClosing - cashFlow.expected_closing_cash) * 100) / 100;
 
-    run(`
+    await run(`
       UPDATE cash_drawers SET
         closed_at = CURRENT_TIMESTAMP,
         cash_sales = ?,
@@ -239,9 +239,9 @@ function closeShift(req, res) {
 /**
  * Get shift history logs
  */
-function getShiftHistory(req, res) {
+async function getShiftHistory(req, res) {
   try {
-    const shifts = query(`
+    const shifts = await query(`
       SELECT cd.*, u.full_name as cashier_name
       FROM cash_drawers cd
       JOIN users u ON cd.cashier_id = u.id

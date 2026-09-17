@@ -4,13 +4,13 @@ const { verifyPassword, hashPassword, signToken } = require('../utils/authUtils'
 /**
  * Login with username/password OR fast 4-digit PIN
  */
-function login(req, res) {
+async function login(req, res) {
   try {
     const { username, password, pin } = req.body;
 
     // Quick PIN login (used on high-speed POS terminal)
     if (pin) {
-      const user = get('SELECT id, username, full_name, role, pin, is_active FROM users WHERE pin = ? AND is_active = 1', [pin]);
+      const user = await get('SELECT id, username, full_name, role, pin, is_active FROM users WHERE pin = ? AND is_active = 1', [pin]);
       if (!user) {
         return res.status(401).json({ success: false, message: 'Invalid Quick PIN' });
       }
@@ -39,7 +39,7 @@ function login(req, res) {
       return res.status(400).json({ success: false, message: 'Username and password required' });
     }
 
-    const user = get('SELECT * FROM users WHERE username = ? AND is_active = 1', [username]);
+    const user = await get('SELECT * FROM users WHERE username = ? AND is_active = 1', [username]);
     if (!user) {
       return res.status(401).json({ success: false, message: 'Invalid username or account deactivated' });
     }
@@ -75,9 +75,9 @@ function login(req, res) {
 /**
  * Get current authenticated user profile
  */
-function getMe(req, res) {
+async function getMe(req, res) {
   try {
-    const user = get('SELECT id, username, full_name, role, phone, pin FROM users WHERE id = ?', [req.user.id]);
+    const user = await get('SELECT id, username, full_name, role, phone, pin FROM users WHERE id = ?', [req.user.id]);
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
@@ -90,9 +90,9 @@ function getMe(req, res) {
 /**
  * List all users (Admin only)
  */
-function getUsers(req, res) {
+async function getUsers(req, res) {
   try {
-    const users = query('SELECT id, username, full_name, role, phone, pin, is_active, created_at FROM users ORDER BY id ASC');
+    const users = await query('SELECT id, username, full_name, role, phone, pin, is_active, created_at FROM users ORDER BY id ASC');
     return res.json({ success: true, users });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
@@ -102,20 +102,20 @@ function getUsers(req, res) {
 /**
  * Create new user (Admin only)
  */
-function createUser(req, res) {
+async function createUser(req, res) {
   try {
     const { username, password, pin, full_name, role, phone } = req.body;
     if (!username || !password || !full_name || !role) {
       return res.status(400).json({ success: false, message: 'Missing required user fields' });
     }
 
-    const existing = get('SELECT id FROM users WHERE username = ?', [username]);
+    const existing = await get('SELECT id FROM users WHERE username = ?', [username]);
     if (existing) {
       return res.status(400).json({ success: false, message: 'Username already taken' });
     }
 
     const password_hash = hashPassword(password);
-    const result = run(
+    const result = await run(
       'INSERT INTO users (username, password_hash, pin, full_name, role, phone) VALUES (?, ?, ?, ?, ?, ?)',
       [username, password_hash, pin || null, full_name, role, phone || null]
     );
@@ -133,12 +133,12 @@ function createUser(req, res) {
 /**
  * Update user details/PIN/password (Admin only)
  */
-function updateUser(req, res) {
+async function updateUser(req, res) {
   try {
     const { id } = req.params;
     const { full_name, role, phone, pin, password, is_active } = req.body;
 
-    const user = get('SELECT id FROM users WHERE id = ?', [id]);
+    const user = await get('SELECT id FROM users WHERE id = ?', [id]);
     if (!user) {
       return res.status(404).json({ success: false, message: 'User not found' });
     }
@@ -154,7 +154,7 @@ function updateUser(req, res) {
     queryStr += ' WHERE id = ?';
     params.push(id);
 
-    run(queryStr, params);
+    await run(queryStr, params);
     return res.json({ success: true, message: 'User updated successfully' });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });

@@ -4,12 +4,12 @@ const { query, get, run, transaction } = require('../config/db');
  * Look up component by Serial Number
  * Shows full warranty lifecycle, invoice link, and customer details
  */
-function lookupSerial(req, res) {
+async function lookupSerial(req, res) {
   try {
     const { serial_number } = req.params;
     const cleanSN = serial_number.trim();
 
-    const serial = get(`
+    const serial = await get(`
       SELECT
         sn.*,
         p.name as product_name,
@@ -58,7 +58,7 @@ function lookupSerial(req, res) {
     }
 
     // Fetch existing claims / RMA history for this serial number
-    const claims = query(`
+    const claims = await query(`
       SELECT wc.*, inv.invoice_number
       FROM warranty_claims wc
       LEFT JOIN invoices inv ON wc.invoice_id = inv.id
@@ -85,7 +85,7 @@ function lookupSerial(req, res) {
 /**
  * Get all serial numbers with filter by status or product
  */
-function getSerialNumbers(req, res) {
+async function getSerialNumbers(req, res) {
   try {
     const { status, product_id, search, limit = 100 } = req.query;
 
@@ -119,7 +119,7 @@ function getSerialNumbers(req, res) {
     sql += ` ORDER BY sn.id DESC LIMIT ?`;
     params.push(Number(limit));
 
-    const serials = query(sql, params);
+    const serials = await query(sql, params);
     return res.json({ success: true, count: serials.length, serials });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
@@ -129,14 +129,14 @@ function getSerialNumbers(req, res) {
 /**
  * Add new serial numbers to stock (for inventory receipt)
  */
-function addSerialsToStock(req, res) {
+async function addSerialsToStock(req, res) {
   try {
     const { product_id, serial_numbers } = req.body;
     if (!product_id || !Array.isArray(serial_numbers) || serial_numbers.length === 0) {
       return res.status(400).json({ success: false, message: 'Product ID and serial numbers list required' });
     }
 
-    const product = get('SELECT id, name FROM products WHERE id = ?', [product_id]);
+    const product = await get('SELECT id, name FROM products WHERE id = ?', [product_id]);
     if (!product) {
       return res.status(404).json({ success: false, message: 'Product not found' });
     }
@@ -144,21 +144,21 @@ function addSerialsToStock(req, res) {
     let inserted = 0;
     const errors = [];
 
-    transaction(({ get, run }) => {
+    await transaction(async ({ get: txGet, run: txRun }) => {
       for (const sn of serial_numbers) {
         const clean = sn.trim();
         if (!clean) continue;
-        const exists = get('SELECT id FROM serial_numbers WHERE serial_number = ?', [clean]);
+        const exists = await txGet('SELECT id FROM serial_numbers WHERE serial_number = ?', [clean]);
         if (exists) {
           errors.push(`Serial "${clean}" already exists in database.`);
           continue;
         }
-        run("INSERT INTO serial_numbers (serial_number, product_id, status) VALUES (?, ?, 'in_stock')", [clean, product_id]);
+        await txRun("INSERT INTO serial_numbers (serial_number, product_id, status) VALUES (?, ?, 'in_stock')", [clean, product_id]);
         inserted++;
       }
       // Update stock quantity on product
       if (inserted > 0) {
-        run('UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?', [inserted, product_id]);
+        await txRun('UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?', [inserted, product_id]);
       }
     });
 
@@ -176,7 +176,7 @@ function addSerialsToStock(req, res) {
 /**
  * Create a new Warranty / RMA claim
  */
-function createClaim(req, res) {
+async function createClaim(req, res) {
   try {
     const { serial_number_id, issue_description, notes } = req.body;
 
@@ -184,14 +184,14 @@ function createClaim(req, res) {
       return res.status(400).json({ success: false, message: 'Serial number and issue description required' });
     }
 
-    const serial = get('SELECT * FROM serial_numbers WHERE id = ?', [serial_number_id]);
+    const serial = await get('SELECT * FROM serial_numbers WHERE id = ?', [serial_number_id]);
     if (!serial) {
       return res.status(404).json({ success: false, message: 'Serial number record not found' });
     }
 
     // Generate RMA Claim Number e.g. RMA-20260909-001
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-    const lastClaim = get(`SELECT claim_number FROM warranty_claims WHERE claim_number LIKE 'RMA-${dateStr}-%' ORDER BY id DESC LIMIT 1`);
+    const lastClaim = await get(`SELECT claim_number FROM warranty_claims WHERE claim_number LIKE 'RMA-${dateStr}-%' ORDER BY id DESC LIMIT 1`);
     let seq = 1;
     if (lastClaim) {
       const parts = lastClaim.claim_number.split('-');
@@ -199,7 +199,7 @@ function createClaim(req, res) {
     }
     const claimNumber = `RMA-${dateStr}-${String(seq).padStart(3, '0')}`;
 
-    const result = run(`
+    const result = await run(`
       INSERT INTO warranty_claims (
         claim_number, serial_number_id, invoice_id, customer_id,
         issue_description, status, resolution_notes
@@ -214,7 +214,7 @@ function createClaim(req, res) {
     ]);
 
     // Update serial status to rma_claimed
-    run("UPDATE serial_numbers SET status = 'rma_claimed' WHERE id = ?", [serial.id]);
+    await run("UPDATE serial_numbers SET status = 'rma_claimed' WHERE id = ?", [serial.id]);
 
     return res.status(201).json({
       success: true,
@@ -230,7 +230,7 @@ function createClaim(req, res) {
 /**
  * Get all RMA warranty claims
  */
-function getClaims(req, res) {
+async function getClaims(req, res) {
   try {
     const { status } = req.query;
     let sql = `
@@ -249,7 +249,7 @@ function getClaims(req, res) {
     }
     sql += ` ORDER BY wc.id DESC`;
 
-    const claims = query(sql, params);
+    const claims = await query(sql, params);
     return res.json({ success: true, count: claims.length, claims });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
@@ -259,12 +259,12 @@ function getClaims(req, res) {
 /**
  * Update RMA Claim Status (sent_to_vendor, repaired, replaced, rejected)
  */
-function updateClaimStatus(req, res) {
+async function updateClaimStatus(req, res) {
   try {
     const { id } = req.params;
     const { status, resolution_notes } = req.body;
 
-    const claim = get('SELECT * FROM warranty_claims WHERE id = ?', [id]);
+    const claim = await get('SELECT * FROM warranty_claims WHERE id = ?', [id]);
     if (!claim) {
       return res.status(404).json({ success: false, message: 'Claim not found' });
     }
@@ -272,7 +272,7 @@ function updateClaimStatus(req, res) {
     const isResolved = ['repaired', 'replaced', 'rejected'].includes(status);
     const resolvedAt = isResolved ? new Date().toISOString() : null;
 
-    run(`
+    await run(`
       UPDATE warranty_claims
       SET status = ?, resolution_notes = ?, resolved_at = ?
       WHERE id = ?
@@ -280,9 +280,9 @@ function updateClaimStatus(req, res) {
 
     // If replaced or returned to customer, adjust serial status
     if (status === 'replaced') {
-      run("UPDATE serial_numbers SET status = 'returned' WHERE id = ?", [claim.serial_number_id]);
+      await run("UPDATE serial_numbers SET status = 'returned' WHERE id = ?", [claim.serial_number_id]);
     } else if (status === 'repaired') {
-      run("UPDATE serial_numbers SET status = 'sold' WHERE id = ?", [claim.serial_number_id]);
+      await run("UPDATE serial_numbers SET status = 'sold' WHERE id = ?", [claim.serial_number_id]);
     }
 
     return res.json({ success: true, message: `Claim status updated to ${status}` });

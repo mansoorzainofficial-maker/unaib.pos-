@@ -1,16 +1,16 @@
-const { query, get, run, transaction, getDb } = require('../config/db');
+const { query, get, run, transaction } = require('../config/db');
 
 /**
  * Generate unique Invoice Number (e.g. UCA-20260909-0001)
  */
-function generateInvoiceNumber() {
+async function generateInvoiceNumber(dbGet = get) {
   const now = new Date();
   const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
   const prefix = 'UCA';
 
   // Find latest invoice of today
-  const last = get(
-    `SELECT invoice_number FROM invoices WHERE invoice_number LIKE ? ORDER BY id DESC LIMIT 1`,
+  const last = await dbGet(
+    'SELECT invoice_number FROM invoices WHERE invoice_number LIKE ? ORDER BY id DESC LIMIT 1',
     [`${prefix}-${dateStr}-%`]
   );
 
@@ -29,7 +29,7 @@ function generateInvoiceNumber() {
 /**
  * Process a POS Sale Transaction (Atomic ACID transaction)
  */
-function createInvoice(req, res) {
+async function createInvoice(req, res) {
   try {
     const {
       customer_mode,
@@ -55,14 +55,14 @@ function createInvoice(req, res) {
     const cashierId = req.user ? req.user.id : 1;
 
     // Run transaction
-    const invoiceResult = transaction(({ query, get, run }) => {
+    const invoiceResult = await transaction(async ({ query: txQuery, get: txGet, run: txRun }) => {
       // 1. Resolve or create Customer (Match by ID, Phone, or Name)
       let customerId = customer_id ? Number(customer_id) : null;
       const cleanPhone = customer_phone ? customer_phone.trim() : null;
       let cleanName = customer_name ? customer_name.trim() : '';
 
       if (customerId) {
-        const custRecord = get('SELECT id, name, phone FROM customers WHERE id = ?', [customerId]);
+        const custRecord = await txGet('SELECT id, name, phone FROM customers WHERE id = ?', [customerId]);
         if (custRecord) {
           if (!cleanName) cleanName = custRecord.name;
         } else {
@@ -71,7 +71,7 @@ function createInvoice(req, res) {
       }
 
       if (!customerId && cleanPhone) {
-        let existingCust = get('SELECT id, name, total_spent FROM customers WHERE phone = ?', [cleanPhone]);
+        let existingCust = await txGet('SELECT id, name, total_spent FROM customers WHERE phone = ?', [cleanPhone]);
         if (existingCust) {
           customerId = existingCust.id;
           if (!cleanName) cleanName = existingCust.name;
@@ -79,7 +79,7 @@ function createInvoice(req, res) {
       }
 
       if (!customerId && cleanName && cleanName.toLowerCase() !== 'walk-in customer') {
-        let existingByName = get('SELECT id, name FROM customers WHERE LOWER(name) = LOWER(?)', [cleanName]);
+        let existingByName = await txGet('SELECT id, name FROM customers WHERE LOWER(name) = LOWER(?)', [cleanName]);
         if (existingByName) {
           customerId = existingByName.id;
         }
@@ -91,7 +91,7 @@ function createInvoice(req, res) {
       const stockWarnings = [];
 
       for (const item of items) {
-        const product = get('SELECT * FROM products WHERE id = ?', [item.product_id]);
+        const product = await txGet('SELECT * FROM products WHERE id = ?', [item.product_id]);
         if (!product) {
           throw new Error(`Product not found with ID ${item.product_id}`);
         }
@@ -193,14 +193,14 @@ function createInvoice(req, res) {
       // If Udhar exists (balanceDue > 0) or customer details provided, ensure customer record exists
       if (balanceDue > 0 && !customerId) {
         const fallbackName = cleanName && cleanName.toLowerCase() !== 'walk-in customer' ? cleanName : 'واک ان ادھار گاہک';
-        const newCust = run(
+        const newCust = await txRun(
           'INSERT INTO customers (name, phone, email) VALUES (?, ?, ?)',
           [fallbackName, cleanPhone || null, customer_email || null]
         );
         customerId = newCust.lastInsertRowid;
         if (!cleanName || cleanName.toLowerCase() === 'walk-in customer') cleanName = fallbackName;
       } else if (!customerId && (cleanPhone || (cleanName && cleanName.toLowerCase() !== 'walk-in customer' && cleanName !== 'عام واک ان گاہک'))) {
-        const newCust = run(
+        const newCust = await txRun(
           'INSERT INTO customers (name, phone, email) VALUES (?, ?, ?)',
           [cleanName || 'عام واک ان گاہک', cleanPhone || null, customer_email || null]
         );
@@ -213,7 +213,7 @@ function createInvoice(req, res) {
       let prevCustomerBalance = 0;
       let newCustomerBalance = 0;
       if (customerId) {
-        const custRecord = get('SELECT current_balance FROM customers WHERE id = ?', [customerId]);
+        const custRecord = await txGet('SELECT current_balance FROM customers WHERE id = ?', [customerId]);
         prevCustomerBalance = custRecord ? Number(custRecord.current_balance || 0) : 0;
 
         // Customer Balance Delta:
@@ -223,8 +223,8 @@ function createInvoice(req, res) {
       }
 
       // 4. Insert Invoice Header
-      const invoiceNumber = generateInvoiceNumber();
-      const invoiceInsert = run(`
+      const invoiceNumber = await generateInvoiceNumber(txGet);
+      const invoiceInsert = await txRun(`
         INSERT INTO invoices (
           invoice_number, customer_id, customer_name, customer_phone,
           cashier_id, subtotal, discount_type, discount_value,
@@ -259,7 +259,7 @@ function createInvoice(req, res) {
       // 5. Insert Line Items, Update Product Stock, and Assign Serial Numbers
       for (const item of processedItems) {
         // Insert line item
-        const itemInsert = run(`
+        const itemInsert = await txRun(`
           INSERT INTO invoice_items (
             invoice_id, product_id, product_name, cost_price,
             unit_price, quantity, total_price, warranty_months
@@ -278,7 +278,7 @@ function createInvoice(req, res) {
         const invoiceItemId = itemInsert.lastInsertRowid;
 
         // Deduct product stock quantity
-        run(`UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?`, [item.qty, item.product.id]);
+        await txRun('UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?', [item.qty, item.product.id]);
 
         // Process serialized components
         if (item.product.has_serials && item.serials.length > 0) {
@@ -291,10 +291,10 @@ function createInvoice(req, res) {
             const expiryStr = expiryDate.toISOString();
 
             // Check if serial exists in stock or is new
-            const existingSerial = get('SELECT id, status FROM serial_numbers WHERE serial_number = ?', [cleanSN]);
+            const existingSerial = await txGet('SELECT id, status FROM serial_numbers WHERE serial_number = ?', [cleanSN]);
 
             if (existingSerial) {
-              run(`
+              await txRun(`
                 UPDATE serial_numbers SET
                   status = 'sold',
                   invoice_id = ?,
@@ -306,7 +306,7 @@ function createInvoice(req, res) {
               `, [invoiceId, invoiceItemId, customerId, expiryStr, existingSerial.id]);
             } else {
               // Automatically register serial number as sold
-              run(`
+              await txRun(`
                 INSERT INTO serial_numbers (
                   serial_number, product_id, status, invoice_id,
                   invoice_item_id, customer_id, sold_date, warranty_expiry_date
@@ -319,7 +319,7 @@ function createInvoice(req, res) {
 
       // 6. Update Customer Lifetime Spend and Khata / Ledger Balance
       if (customerId) {
-        run('UPDATE customers SET total_spent = total_spent + ?, current_balance = ? WHERE id = ?', [
+        await txRun('UPDATE customers SET total_spent = total_spent + ?, current_balance = ? WHERE id = ?', [
           grandTotal,
           newCustomerBalance,
           customerId
@@ -333,10 +333,10 @@ function createInvoice(req, res) {
           } else if (excessPaidToKhata > 0) {
             ledgerDesc += ` (Bill: Rs. ${grandTotal.toLocaleString()}, Paid: Rs. ${paid.toLocaleString()}, Khata Wasooli: -Rs. ${excessPaidToKhata.toLocaleString()})`;
           } else {
-            ledgerDesc += ` (Paid in Full)`;
+            ledgerDesc += ' (Paid in Full)';
           }
 
-          run(`
+          await txRun(`
             INSERT INTO ledger_entries (
               party_type, party_id, entry_type, reference_id, reference_no,
               debit, credit, account_id, description, entry_date
@@ -356,7 +356,7 @@ function createInvoice(req, res) {
       // 7. If cash payment and there is an open cash drawer, update drawer cash_sales
       if (payment_method === 'cash') {
         const cashReceived = (isPartyMode && customerId) ? paid : Math.min(paid, grandTotal);
-        run(`
+        await txRun(`
           UPDATE cash_drawers
           SET cash_sales = cash_sales + ?,
               expected_closing_cash = expected_closing_cash + ?
@@ -367,7 +367,7 @@ function createInvoice(req, res) {
       // 8. If any items were oversold during offline sync, log them into stock_alerts
       if (stockWarnings.length > 0) {
         for (const warn of stockWarnings) {
-          run(`
+          await txRun(`
             INSERT INTO stock_alerts (
               product_id, product_name, invoice_id, invoice_number,
               available_before, quantity_sold, quantity_oversold, status
@@ -388,7 +388,7 @@ function createInvoice(req, res) {
     });
 
     // Fetch complete invoice record for thermal receipt response
-    const fullInvoice = getFullInvoiceDetails(invoiceResult.invoiceId);
+    const fullInvoice = await getFullInvoiceDetails(invoiceResult.invoiceId);
     if (fullInvoice) {
       fullInvoice.stock_warnings = invoiceResult.stockWarnings || [];
     }
@@ -408,8 +408,8 @@ function createInvoice(req, res) {
 /**
  * Fetch complete invoice with line items, serial numbers, cashier, and store info
  */
-function getFullInvoiceDetails(invoiceId) {
-  const invoice = get(`
+async function getFullInvoiceDetails(invoiceId) {
+  const invoice = await get(`
     SELECT inv.*, u.full_name as cashier_name,
            c.current_balance as live_customer_balance
     FROM invoices inv
@@ -424,7 +424,7 @@ function getFullInvoiceDetails(invoiceId) {
     ? invoice.new_customer_balance
     : invoice.live_customer_balance;
 
-  const items = query(`
+  const items = await query(`
     SELECT ii.*, p.barcode
     FROM invoice_items ii
     LEFT JOIN products p ON ii.product_id = p.id
@@ -432,7 +432,7 @@ function getFullInvoiceDetails(invoiceId) {
   `, [invoiceId]);
 
   // Fetch serial numbers linked to this invoice
-  const serials = query(`
+  const serials = await query(`
     SELECT serial_number, product_id, invoice_item_id, warranty_expiry_date
     FROM serial_numbers
     WHERE invoice_id = ?
@@ -450,7 +450,7 @@ function getFullInvoiceDetails(invoiceId) {
   }));
 
   // Fetch store settings for receipt branding
-  const settingsRows = query('SELECT key, value FROM store_settings');
+  const settingsRows = await query('SELECT key, value FROM store_settings');
   const storeSettings = {};
   settingsRows.forEach(s => {
     storeSettings[s.key] = s.value;
@@ -466,7 +466,7 @@ function getFullInvoiceDetails(invoiceId) {
 /**
  * Get all invoices with filtering (search, date range, status)
  */
-function getInvoices(req, res) {
+async function getInvoices(req, res) {
   try {
     const { search, start_date, end_date, limit = 50 } = req.query;
 
@@ -488,19 +488,19 @@ function getInvoices(req, res) {
     }
 
     if (cleanStartDate) {
-      sql += ` AND DATE(inv.created_at) >= DATE(?)`;
+      sql += ' AND DATE(inv.created_at) >= DATE(?)';
       params.push(cleanStartDate);
     }
 
     if (cleanEndDate) {
-      sql += ` AND DATE(inv.created_at) <= DATE(?)`;
+      sql += ' AND DATE(inv.created_at) <= DATE(?)';
       params.push(cleanEndDate);
     }
 
-    sql += ` ORDER BY inv.id DESC LIMIT ?`;
+    sql += ' ORDER BY inv.id DESC LIMIT ?';
     params.push(Number(limit));
 
-    const invoices = query(sql, params);
+    const invoices = await query(sql, params);
     return res.json({ success: true, count: invoices.length, invoices });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
@@ -510,16 +510,16 @@ function getInvoices(req, res) {
 /**
  * Get single invoice details by invoice_number or ID
  */
-function getInvoiceDetails(req, res) {
+async function getInvoiceDetails(req, res) {
   try {
     const { identifier } = req.params;
     let invoice = null;
 
     if (isNaN(identifier)) {
-      const row = get('SELECT id FROM invoices WHERE invoice_number = ?', [identifier]);
-      if (row) invoice = getFullInvoiceDetails(row.id);
+      const row = await get('SELECT id FROM invoices WHERE invoice_number = ?', [identifier]);
+      if (row) invoice = await getFullInvoiceDetails(row.id);
     } else {
-      invoice = getFullInvoiceDetails(Number(identifier));
+      invoice = await getFullInvoiceDetails(Number(identifier));
     }
 
     if (!invoice) {
@@ -535,7 +535,7 @@ function getInvoiceDetails(req, res) {
 /**
  * Get customers list with balance and lifetime spending
  */
-function getCustomers(req, res) {
+async function getCustomers(req, res) {
   try {
     const { search } = req.query;
     let sql = 'SELECT * FROM customers WHERE 1=1';
@@ -545,7 +545,7 @@ function getCustomers(req, res) {
       params.push(`%${search}%`, `%${search}%`);
     }
     sql += ' ORDER BY current_balance DESC, name ASC';
-    const customers = query(sql, params);
+    const customers = await query(sql, params);
     return res.json({ success: true, customers });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
@@ -555,7 +555,7 @@ function getCustomers(req, res) {
 /**
  * Create a new customer record directly
  */
-function createCustomer(req, res) {
+async function createCustomer(req, res) {
   try {
     const { name, phone, email, address, opening_balance } = req.body;
     if (!name || !name.trim()) {
@@ -563,7 +563,7 @@ function createCustomer(req, res) {
     }
 
     const openBal = Number(opening_balance) || 0;
-    const result = run(
+    const result = await run(
       'INSERT INTO customers (name, phone, email, address, current_balance) VALUES (?, ?, ?, ?, ?)',
       [name.trim(), phone ? phone.trim() : null, email ? email.trim() : null, address ? address.trim() : null, openBal]
     );
@@ -571,7 +571,7 @@ function createCustomer(req, res) {
     const customerId = result.lastInsertRowid;
 
     if (openBal > 0) {
-      run(`
+      await run(`
         INSERT INTO ledger_entries (
           party_type, party_id, entry_type, debit, credit, description, entry_date
         ) VALUES ('client', ?, 'opening_balance', ?, 0, 'Opening Balance (Previous Udhar)', DATE('now'))
@@ -591,7 +591,7 @@ function createCustomer(req, res) {
 /**
  * Void / Cancel a POS Sale Invoice (Atomic rollback)
  */
-function voidInvoice(req, res) {
+async function voidInvoice(req, res) {
   try {
     const { id } = req.params;
     const void_reason = (req.body.void_reason || req.body.reason || '').trim();
@@ -602,9 +602,9 @@ function voidInvoice(req, res) {
       return res.status(400).json({ success: false, message: 'Void reason is required' });
     }
 
-    const voidResult = transaction(({ query, get, run }) => {
+    const voidResult = await transaction(async ({ query: txQuery, get: txGet, run: txRun }) => {
       // 1. Fetch active invoice record
-      const invoice = get('SELECT * FROM invoices WHERE id = ?', [invoiceId]);
+      const invoice = await txGet('SELECT * FROM invoices WHERE id = ?', [invoiceId]);
       if (!invoice) {
         throw new Error('Invoice not found');
       }
@@ -614,24 +614,24 @@ function voidInvoice(req, res) {
       }
 
       // 2. Fetch line items and serials
-      const lineItems = query('SELECT * FROM invoice_items WHERE invoice_id = ?', [invoiceId]);
+      const lineItems = await txQuery('SELECT * FROM invoice_items WHERE invoice_id = ?', [invoiceId]);
 
       // 3. Restore product stock quantities
       for (const it of lineItems) {
-        run('UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?', [
+        await txRun('UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?', [
           it.quantity,
           it.product_id
         ]);
       }
 
       // 4. Free / unassign serial numbers
-      run(
+      await txRun(
         "UPDATE serial_numbers SET status = 'in_stock', invoice_id = NULL, invoice_item_id = NULL, customer_id = NULL, sold_date = NULL, warranty_expiry_date = NULL WHERE invoice_id = ?",
         [invoiceId]
       );
 
       // 5. Mark Invoice Header as voided and update status to void
-      run(`
+      await txRun(`
         UPDATE invoices SET
           status = 'void',
           voided_at = CURRENT_TIMESTAMP,
@@ -642,7 +642,7 @@ function voidInvoice(req, res) {
 
       // 6. Reverse Customer Lifetime Spend and Khata / Ledger Balance
       if (invoice.customer_id) {
-        const customer = get('SELECT id, current_balance, total_spent FROM customers WHERE id = ?', [invoice.customer_id]);
+        const customer = await txGet('SELECT id, current_balance, total_spent FROM customers WHERE id = ?', [invoice.customer_id]);
         if (customer) {
           const grandTotal = Number(invoice.grand_total) || 0;
           const paid = Number(invoice.paid_amount) || 0;
@@ -650,13 +650,13 @@ function voidInvoice(req, res) {
           const newCustBalance = Math.round(((customer.current_balance || 0) - netInvoiceDelta) * 100) / 100;
           const newTotalSpent = Math.max(0, (customer.total_spent || 0) - grandTotal);
 
-          run(
+          await txRun(
             'UPDATE customers SET current_balance = ?, total_spent = ? WHERE id = ?',
             [newCustBalance, newTotalSpent, invoice.customer_id]
           );
 
           // Log reversing entry in ledger
-          run(`
+          await txRun(`
             INSERT INTO ledger_entries (
               party_type, party_id, entry_type, reference_id, reference_no,
               debit, credit, account_id, description, entry_date
@@ -679,12 +679,12 @@ function voidInvoice(req, res) {
           ? Number(invoice.paid_amount || 0)
           : Math.min(Number(invoice.paid_amount || 0), Number(invoice.grand_total || 0));
         if (cashRefund > 0) {
-          run(`
+          await txRun(`
             UPDATE cash_drawers
-            SET cash_sales = MAX(0, cash_sales - ?),
-                expected_closing_cash = MAX(0, expected_closing_cash - ?)
+            SET cash_sales = CASE WHEN cash_sales - ? < 0 THEN 0 ELSE cash_sales - ? END,
+                expected_closing_cash = CASE WHEN expected_closing_cash - ? < 0 THEN 0 ELSE expected_closing_cash - ? END
             WHERE status = 'open' AND (cashier_id = ? OR id = (SELECT id FROM cash_drawers WHERE status = 'open' ORDER BY id DESC LIMIT 1))
-          `, [cashRefund, cashRefund, voidedBy]);
+          `, [cashRefund, cashRefund, cashRefund, cashRefund, voidedBy]);
         }
       }
 
@@ -711,49 +711,49 @@ function voidInvoice(req, res) {
  * Permanently Delete an Invoice (Restores stock & ledger, deletes record)
  * DELETE /api/invoices/:id
  */
-function deleteInvoice(req, res) {
+async function deleteInvoice(req, res) {
   try {
     const invoiceId = Number(req.params.id);
-    const invoice = get('SELECT * FROM invoices WHERE id = ?', [invoiceId]);
+    const invoice = await get('SELECT * FROM invoices WHERE id = ?', [invoiceId]);
     if (!invoice) {
       return res.status(404).json({ success: false, message: 'Invoice not found' });
     }
 
-    transaction(({ query, get, run }) => {
+    await transaction(async ({ query: txQuery, get: txGet, run: txRun }) => {
       // 1. If not voided yet, restore product stock & serials first
       if (!invoice.voided_at && invoice.status !== 'void' && invoice.status !== 'cancelled') {
-        const lineItems = query('SELECT * FROM invoice_items WHERE invoice_id = ?', [invoiceId]);
+        const lineItems = await txQuery('SELECT * FROM invoice_items WHERE invoice_id = ?', [invoiceId]);
         for (const it of lineItems) {
-          run('UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?', [
+          await txRun('UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?', [
             it.quantity,
             it.product_id
           ]);
         }
-        run(
+        await txRun(
           "UPDATE serial_numbers SET status = 'in_stock', invoice_id = NULL, invoice_item_id = NULL, customer_id = NULL, sold_date = NULL, warranty_expiry_date = NULL WHERE invoice_id = ?",
           [invoiceId]
         );
         if (invoice.customer_id) {
-          const customer = get('SELECT id, current_balance, total_spent FROM customers WHERE id = ?', [invoice.customer_id]);
+          const customer = await txGet('SELECT id, current_balance, total_spent FROM customers WHERE id = ?', [invoice.customer_id]);
           if (customer) {
             const grandTotal = Number(invoice.grand_total) || 0;
             const paid = Number(invoice.paid_amount) || 0;
             const netInvoiceDelta = grandTotal - paid;
             const newCustBalance = Math.round(((customer.current_balance || 0) - netInvoiceDelta) * 100) / 100;
             const newTotalSpent = Math.max(0, (customer.total_spent || 0) - grandTotal);
-            run('UPDATE customers SET current_balance = ?, total_spent = ? WHERE id = ?', [newCustBalance, newTotalSpent, invoice.customer_id]);
+            await txRun('UPDATE customers SET current_balance = ?, total_spent = ? WHERE id = ?', [newCustBalance, newTotalSpent, invoice.customer_id]);
           }
         }
       }
 
       // 2. Remove ledger entries for this invoice
-      run("DELETE FROM ledger_entries WHERE party_type = 'client' AND reference_id = ?", [invoiceId]);
+      await txRun("DELETE FROM ledger_entries WHERE party_type = 'client' AND reference_id = ?", [invoiceId]);
 
       // 3. Delete invoice line items
-      run('DELETE FROM invoice_items WHERE invoice_id = ?', [invoiceId]);
+      await txRun('DELETE FROM invoice_items WHERE invoice_id = ?', [invoiceId]);
 
       // 4. Delete invoice record
-      run('DELETE FROM invoices WHERE id = ?', [invoiceId]);
+      await txRun('DELETE FROM invoices WHERE id = ?', [invoiceId]);
     });
 
     return res.json({

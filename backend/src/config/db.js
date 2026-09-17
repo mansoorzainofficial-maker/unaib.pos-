@@ -2,37 +2,65 @@ const fs = require('fs');
 const path = require('path');
 const { DatabaseSync } = require('node:sqlite');
 
-// Database file path - supports local desktop and Vercel serverless environment
+// Safely load local .env from backend/.env or root .env (never hardcoded, never committed)
+try {
+  const envPaths = [
+    path.resolve(__dirname, '../../.env'),
+    path.resolve(__dirname, '../../../.env')
+  ];
+  for (const ep of envPaths) {
+    if (fs.existsSync(ep)) {
+      require('dotenv').config({ path: ep });
+    }
+  }
+} catch (_) {}
+
+// Check if PostgreSQL (Supabase) is configured via environment variable
+const isPostgres = Boolean(process.env.DATABASE_URL && process.env.DATABASE_URL.trim().length > 0);
+
+let pgPool = null;
+
+if (isPostgres) {
+  const { Pool, types } = require('pg');
+
+  // 1. NUMERIC / DECIMAL (OID 1700) -> Convert to JavaScript float
+  types.setTypeParser(1700, (val) => (val === null ? null : parseFloat(val)));
+
+  // 2. BIGINT / INT8 (OID 20) -> Convert to JavaScript integer
+  types.setTypeParser(20, (val) => (val === null ? null : parseInt(val, 10)));
+
+  // 3. FLOAT4 (OID 700) & FLOAT8 (OID 701) -> Convert to JavaScript float
+  types.setTypeParser(700, (val) => (val === null ? null : parseFloat(val)));
+  types.setTypeParser(701, (val) => (val === null ? null : parseFloat(val)));
+
+  // 4. DATE (OID 1082) -> Return raw 'YYYY-MM-DD' string (Prevents unwanted UTC timezone shifts)
+  types.setTypeParser(1082, (val) => val);
+
+  pgPool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false },
+    max: 10,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 10000
+  });
+
+  pgPool.on('error', (err) => {
+    console.error('[pgPool Error]', err.message);
+  });
+}
+
+// Database file path - supports local desktop SQLite
 function resolveDbPath() {
   if (process.env.DB_PATH) return process.env.DB_PATH;
-  if (process.env.VERCEL) {
-    const tmpDb = '/tmp/unaib_pos.sqlite';
-    const originalDb = path.join(__dirname, '../../../unaib_pos.sqlite');
-    try {
-      if (fs.existsSync(originalDb)) {
-        const origStat = fs.statSync(originalDb);
-        const tmpExists = fs.existsSync(tmpDb);
-        if (!tmpExists || fs.statSync(tmpDb).size !== origStat.size || fs.statSync(tmpDb).mtimeMs < origStat.mtimeMs) {
-          fs.copyFileSync(originalDb, tmpDb);
-          console.log('Successfully synced fresh DB from repository to /tmp');
-        }
-      }
-    } catch (err) {
-      console.error('Failed syncing SQLite DB to /tmp:', err.message);
-    }
-    return tmpDb;
-  }
   return path.join(__dirname, '../../../unaib_pos.sqlite');
 }
 
 const DB_PATH = resolveDbPath();
-
 let dbInstance = null;
 
 function getDb() {
   if (!dbInstance) {
     dbInstance = new DatabaseSync(DB_PATH);
-    // Performance optimizations for high-speed POS
     try {
       dbInstance.exec('PRAGMA journal_mode = WAL;');
       dbInstance.exec('PRAGMA synchronous = NORMAL;');
@@ -45,20 +73,43 @@ function getDb() {
 }
 
 /**
+ * Transforms SQLite SQL into PostgreSQL SQL
+ * 1. Converts ? placeholders to $1, $2, ...
+ * 2. Converts DATE('now') to CURRENT_DATE
+ * 3. Converts LIKE ... COLLATE NOCASE and LIKE to ILIKE
+ * 4. Strips remaining COLLATE NOCASE
+ */
+function toPostgresSql(sql) {
+  let idx = 1;
+  let pgSql = sql.replace(/\?/g, () => `$${idx++}`);
+  pgSql = pgSql.replace(/\bDATE\(\s*['"]now['"]\s*\)/gi, 'CURRENT_DATE');
+  pgSql = pgSql.replace(/\bLIKE\b(?:\s+COLLATE\s+NOCASE)?/gi, 'ILIKE');
+  pgSql = pgSql.replace(/\bCOLLATE\s+NOCASE\b/gi, '');
+  return pgSql;
+}
+
+/**
  * Execute a query returning multiple rows
  */
-function query(sql, params = []) {
+async function query(sql, params = []) {
+  if (isPostgres) {
+    const res = await pgPool.query(toPostgresSql(sql), params);
+    return res.rows;
+  }
   const db = getDb();
   const stmt = db.prepare(sql);
   const rows = Array.isArray(params) ? stmt.all(...params) : stmt.all(params);
-  // Clone object from null prototype for clean JSON serialization
   return rows.map(r => ({ ...r }));
 }
 
 /**
  * Execute a query returning a single row
  */
-function get(sql, params = []) {
+async function get(sql, params = []) {
+  if (isPostgres) {
+    const res = await pgPool.query(toPostgresSql(sql), params);
+    return res.rows[0] || null;
+  }
   const db = getDb();
   const stmt = db.prepare(sql);
   const row = Array.isArray(params) ? stmt.get(...params) : stmt.get(params);
@@ -69,7 +120,20 @@ function get(sql, params = []) {
  * Execute an INSERT, UPDATE, or DELETE
  * Returns { changes, lastInsertRowid }
  */
-function run(sql, params = []) {
+async function run(sql, params = []) {
+  if (isPostgres) {
+    let pgSql = toPostgresSql(sql.trim());
+    const isInsert = /^\s*insert\s+into/i.test(pgSql);
+    if (isInsert && !/returning\s+/i.test(pgSql)) {
+      pgSql += ' RETURNING id';
+    }
+    const res = await pgPool.query(pgSql, params);
+    const lastId = res.rows.length > 0 && res.rows[0].id ? Number(res.rows[0].id) : null;
+    return {
+      changes: res.rowCount,
+      lastInsertRowid: lastId
+    };
+  }
   const db = getDb();
   const stmt = db.prepare(sql);
   const res = Array.isArray(params) ? stmt.run(...params) : stmt.run(params);
@@ -80,9 +144,12 @@ function run(sql, params = []) {
 }
 
 /**
- * Execute multiple raw SQL statements
+ * Execute raw SQL statement(s)
  */
-function exec(sql) {
+async function exec(sql) {
+  if (isPostgres) {
+    return await pgPool.query(sql);
+  }
   const db = getDb();
   return db.exec(sql);
 }
@@ -90,23 +157,76 @@ function exec(sql) {
 /**
  * Run operations inside an ACID transaction
  */
-function transaction(fn) {
-  const db = getDb();
-  db.exec('BEGIN TRANSACTION;');
-  try {
-    const result = fn({ query, get, run, exec });
-    db.exec('COMMIT;');
-    return result;
-  } catch (err) {
-    db.exec('ROLLBACK;');
-    throw err;
+async function transaction(fn) {
+  if (isPostgres) {
+    const client = await pgPool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const txQuery = async (sql, params = []) => {
+        const res = await client.query(toPostgresSql(sql), params);
+        return res.rows;
+      };
+
+      const txGet = async (sql, params = []) => {
+        const res = await client.query(toPostgresSql(sql), params);
+        return res.rows[0] || null;
+      };
+
+      const txRun = async (sql, params = []) => {
+        let pgSql = toPostgresSql(sql.trim());
+        const isInsert = /^\s*insert\s+into/i.test(pgSql);
+        if (isInsert && !/returning\s+/i.test(pgSql)) {
+          pgSql += ' RETURNING id';
+        }
+        const res = await client.query(pgSql, params);
+        const lastId = res.rows.length > 0 && res.rows[0].id ? Number(res.rows[0].id) : null;
+        return { changes: res.rowCount, lastInsertRowid: lastId };
+      };
+
+      const txExec = async (sql) => {
+        return await client.query(sql);
+      };
+
+      const result = await fn({ query: txQuery, get: txGet, run: txRun, exec: txExec });
+      await client.query('COMMIT');
+      return result;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      throw err;
+    } finally {
+      client.release();
+    }
+  } else {
+    // SQLite local synchronous transaction
+    const db = getDb();
+    db.exec('BEGIN TRANSACTION;');
+    try {
+      const result = await fn({ query, get, run, exec });
+      db.exec('COMMIT;');
+      return result;
+    } catch (err) {
+      db.exec('ROLLBACK;');
+      throw err;
+    }
   }
 }
 
 /**
  * Initialize schema if not exists
  */
-function initDb() {
+async function initDb() {
+  if (isPostgres) {
+    const schemaPath = path.join(__dirname, '../db/schema.postgres.sql');
+    if (fs.existsSync(schemaPath)) {
+      const schemaSql = fs.readFileSync(schemaPath, 'utf8');
+      await exec(schemaSql);
+      console.log('Supabase PostgreSQL schema initialized / verified.');
+    }
+    return;
+  }
+
+  // SQLite Initialization
   const db = getDb();
   const schemaPath = path.join(__dirname, '../db/schema.sql');
   if (fs.existsSync(schemaPath)) {
@@ -114,8 +234,7 @@ function initDb() {
     db.exec(schemaSql);
   }
   
-  // Check if users exist, if not seed database
-  const userCount = get('SELECT COUNT(*) as cnt FROM users');
+  const userCount = await get('SELECT COUNT(*) as cnt FROM users');
   if (!userCount || userCount.cnt === 0) {
     console.log('Database empty. Running initial seed...');
     const { seed } = require('../db/seed');
@@ -124,7 +243,7 @@ function initDb() {
 
   // Safe schema migrations for Void / Cancel feature
   try {
-    const invCols = query("PRAGMA table_info(invoices)").map(c => c.name);
+    const invCols = (await query("PRAGMA table_info(invoices)")).map(c => c.name);
     if (!invCols.includes('void_reason')) {
       db.exec("ALTER TABLE invoices ADD COLUMN void_reason TEXT;");
     }
@@ -146,7 +265,7 @@ function initDb() {
 
   // Safe schema migrations for Purchases Tax & Supplier Balances
   try {
-    const purCols = query("PRAGMA table_info(purchases)").map(c => c.name);
+    const purCols = (await query("PRAGMA table_info(purchases)")).map(c => c.name);
     if (!purCols.includes('tax_rate')) {
       db.exec("ALTER TABLE purchases ADD COLUMN tax_rate REAL DEFAULT 0.0;");
     }
@@ -250,11 +369,10 @@ function initDb() {
     console.warn('Returns and stock_alerts schema migration warning:', retErr.message);
   }
 
-  // Safe auto-migration: Ensure serial_numbers table has purchase_item_id for precise line-item serial mapping
   try {
     db.exec('ALTER TABLE serial_numbers ADD COLUMN purchase_item_id INTEGER REFERENCES purchase_items(id) ON DELETE SET NULL;');
   } catch (snErr) {
-    // Column already exists or table not ready, safely ignore
+    // Column already exists, ignore
   }
 }
 
@@ -266,5 +384,7 @@ module.exports = {
   exec,
   transaction,
   initDb,
-  DB_PATH
+  DB_PATH,
+  isPostgres,
+  toPostgresSql
 };

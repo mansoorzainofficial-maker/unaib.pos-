@@ -4,7 +4,7 @@ const { query, get } = require('../config/db');
  * Get Financial Dashboard Overview (Today, Week, Month, All-Time, or Custom Range)
  * Admin only!
  */
-function getFinancialSummary(req, res) {
+async function getFinancialSummary(req, res) {
   try {
     const { period = 'today', start_date, end_date } = req.query;
 
@@ -32,7 +32,7 @@ function getFinancialSummary(req, res) {
     }
 
     // 1. Total Revenue, Invoice Count, Discounts Given, Tax Collected
-    const salesStats = get(`
+    const salesStats = await get(`
       SELECT
         COUNT(*) as total_invoices,
         COALESCE(SUM(subtotal), 0) as total_subtotal,
@@ -45,7 +45,7 @@ function getFinancialSummary(req, res) {
 
     // 2. Cost of Goods Sold (COGS) for completed sales
     let cogsDateFilter = dateFilter.replace(/created_at/g, 'inv.created_at');
-    const cogsStats = get(`
+    const cogsStats = await get(`
       SELECT
         COALESCE(SUM(ii.cost_price * ii.quantity), 0) as total_cogs
       FROM invoice_items ii
@@ -55,7 +55,7 @@ function getFinancialSummary(req, res) {
 
     // 3. Operating Expenses in the same period
     let expenseDateFilter = dateFilter.replace(/created_at/g, 'expense_date');
-    const expenseStats = get(`
+    const expenseStats = await get(`
       SELECT
         COALESCE(SUM(amount), 0) as total_expenses
       FROM expenses
@@ -63,7 +63,7 @@ function getFinancialSummary(req, res) {
     `, params);
 
     // 4. Payment Methods Breakdown
-    const paymentBreakdown = query(`
+    const paymentBreakdown = await query(`
       SELECT
         payment_method,
         COUNT(*) as count,
@@ -74,15 +74,15 @@ function getFinancialSummary(req, res) {
     `, params);
 
     // 5. Calculate Gross Profit & Net Profit
-    const revenue = salesStats.total_revenue || 0;
-    const cogs = cogsStats.total_cogs || 0;
+    const revenue = Number(salesStats?.total_revenue) || 0;
+    const cogs = Number(cogsStats?.total_cogs) || 0;
     const grossProfit = revenue - cogs;
-    const expenses = expenseStats.total_expenses || 0;
+    const expenses = Number(expenseStats?.total_expenses) || 0;
     const netProfit = grossProfit - expenses;
     const profitMargin = revenue > 0 ? ((netProfit / revenue) * 100).toFixed(2) : 0;
 
     // 6. Top Selling Accessories in Period
-    const topProducts = query(`
+    const topProducts = await query(`
       SELECT
         ii.product_name,
         SUM(ii.quantity) as total_qty_sold,
@@ -97,7 +97,7 @@ function getFinancialSummary(req, res) {
     `, params);
 
     // 7. Recent Daily Sales Trend (for chart)
-    const dailyTrend = query(`
+    const dailyTrend = await query(`
       SELECT
         DATE(created_at) as sale_date,
         COUNT(*) as order_count,
@@ -113,15 +113,15 @@ function getFinancialSummary(req, res) {
       success: true,
       period,
       summary: {
-        total_invoices: salesStats.total_invoices,
+        total_invoices: Number(salesStats?.total_invoices) || 0,
         total_revenue: revenue,
         total_cogs: cogs,
         gross_profit: grossProfit,
         total_expenses: expenses,
         net_profit: netProfit,
         profit_margin: Number(profitMargin),
-        total_discount: salesStats.total_discount,
-        total_tax: salesStats.total_tax
+        total_discount: Number(salesStats?.total_discount) || 0,
+        total_tax: Number(salesStats?.total_tax) || 0
       },
       payment_breakdown: paymentBreakdown,
       top_products: topProducts,
@@ -137,7 +137,7 @@ function getFinancialSummary(req, res) {
  * Get Comprehensive Tax Audit & Ledger Report (Output Tax vs Input Tax)
  * Filterable by: today, this_month, last_30_days, custom date range
  */
-function getTaxReport(req, res) {
+async function getTaxReport(req, res) {
   try {
     const { period = 'this_month', start_date, end_date } = req.query;
 
@@ -170,7 +170,7 @@ function getTaxReport(req, res) {
     }
 
     // 1. Output Tax Summary (Sales Tax collected from Customers)
-    const salesTaxSummary = get(`
+    const salesTaxSummary = await get(`
       SELECT
         COUNT(*) as total_tax_invoices,
         COALESCE(SUM(inv.subtotal - inv.discount_amount), 0) as total_taxable_sales,
@@ -181,7 +181,7 @@ function getTaxReport(req, res) {
     `, params);
 
     // 2. Input Tax Summary (Purchase Tax paid to Suppliers)
-    const purchaseTaxSummary = get(`
+    const purchaseTaxSummary = await get(`
       SELECT
         COUNT(*) as total_tax_purchases,
         COALESCE(SUM(p.subtotal - p.discount), 0) as total_taxable_purchases,
@@ -192,7 +192,7 @@ function getTaxReport(req, res) {
     `, params);
 
     // 3. Detailed Invoices with Tax
-    const salesTaxInvoices = query(`
+    const salesTaxInvoices = await query(`
       SELECT
         inv.id,
         inv.invoice_number,
@@ -213,7 +213,7 @@ function getTaxReport(req, res) {
     `, params);
 
     // 4. Detailed Purchases with Tax
-    const purchaseTaxBills = query(`
+    const purchaseTaxBills = await query(`
       SELECT
         p.id,
         p.purchase_number,
@@ -247,10 +247,10 @@ function getTaxReport(req, res) {
         total_input_tax: inputTax,
         net_tax_payable: netTaxPayable,
         is_credit: netTaxPayable < 0,
-        total_taxable_sales: salesTaxSummary?.total_taxable_sales || 0,
-        total_tax_invoices: salesTaxSummary?.total_tax_invoices || 0,
-        total_taxable_purchases: purchaseTaxSummary?.total_taxable_purchases || 0,
-        total_tax_purchases: purchaseTaxSummary?.total_tax_purchases || 0
+        total_taxable_sales: Number(salesTaxSummary?.total_taxable_sales) || 0,
+        total_tax_invoices: Number(salesTaxSummary?.total_tax_invoices) || 0,
+        total_taxable_purchases: Number(purchaseTaxSummary?.total_taxable_purchases) || 0,
+        total_tax_purchases: Number(purchaseTaxSummary?.total_tax_purchases) || 0
       },
       sales_tax_invoices: salesTaxInvoices,
       purchase_tax_bills: purchaseTaxBills

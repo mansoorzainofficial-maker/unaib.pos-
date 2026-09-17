@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const { initDb } = require('./config/db');
+const { initDb, isPostgres } = require('./config/db');
 
 // Route imports
 const authRoutes = require('./routes/authRoutes');
@@ -33,17 +33,39 @@ app.use(cors({
 }));
 app.use(express.json());
 
-// Initialize Database on launch & create startup backup
-try {
-  initDb();
-  console.log('Database verified and initialized successfully.');
-  // Automatic snapshot backup on startup
-  backupService.createBackup('startup');
-  // Start automated daily background backup timer
-  backupService.startDailyScheduler();
-} catch (err) {
-  console.error('Failed to initialize database:', err);
+// Database initialization promise
+let initDbPromise = null;
+function ensureDbInit() {
+  if (!initDbPromise) {
+    initDbPromise = initDb().then(() => {
+      console.log(`Database (${isPostgres ? 'PostgreSQL' : 'SQLite'}) initialized successfully.`);
+      if (!isPostgres) {
+        backupService.createBackup('startup');
+        backupService.startDailyScheduler();
+      }
+    }).catch(err => {
+      console.error('Failed to initialize database:', err);
+      initDbPromise = null;
+      throw err;
+    });
+  }
+  return initDbPromise;
 }
+
+// Trigger initialization immediately
+ensureDbInit().catch(() => {});
+
+// Middleware ensuring DB is ready for any /api request
+app.use(async (req, res, next) => {
+  if (req.path.startsWith('/api') && req.path !== '/api/health') {
+    try {
+      await ensureDbInit();
+    } catch (err) {
+      return res.status(500).json({ success: false, message: 'Database initialization failed: ' + err.message });
+    }
+  }
+  next();
+});
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
@@ -77,11 +99,13 @@ let isShuttingDown = false;
 function handleGracefulExit(signal) {
   if (isShuttingDown) return;
   isShuttingDown = true;
-  console.log(`[Server] Received ${signal}. Taking safe shutdown backup...`);
-  try {
-    backupService.createBackup('shutdown');
-  } catch (e) {
-    console.error('[Server] Shutdown backup failed:', e.message);
+  if (!isPostgres) {
+    console.log(`[Server] Received ${signal}. Taking safe shutdown backup...`);
+    try {
+      backupService.createBackup('shutdown');
+    } catch (e) {
+      console.error('[Server] Shutdown backup failed:', e.message);
+    }
   }
   process.exit(0);
 }

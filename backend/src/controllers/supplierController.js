@@ -1,4 +1,4 @@
-﻿const Supplier = require('../models/Supplier');
+const Supplier = require('../models/Supplier');
 
 /**
  * Get all suppliers
@@ -6,7 +6,7 @@
  */
 async function getAllSuppliers(req, res) {
   try {
-    const suppliers = Supplier.getAll();
+    const suppliers = await Supplier.getAll();
     res.json({
       success: true,
       suppliers
@@ -28,7 +28,7 @@ async function getAllSuppliers(req, res) {
 async function getSupplierById(req, res) {
   try {
     const { id } = req.params;
-    const supplier = Supplier.getById(id);
+    const supplier = await Supplier.getById(id);
 
     if (!supplier) {
       return res.status(404).json({
@@ -66,7 +66,7 @@ async function createSupplier(req, res) {
       });
     }
 
-    const newSupplier = Supplier.create({
+    const newSupplier = await Supplier.create({
       name: name.trim(),
       contact_person: contact_person ? contact_person.trim() : null,
       phone: phone ? phone.trim() : null,
@@ -105,7 +105,7 @@ async function updateSupplier(req, res) {
       });
     }
 
-    const existing = Supplier.getById(id);
+    const existing = await Supplier.getById(id);
     if (!existing) {
       return res.status(404).json({
         success: false,
@@ -113,7 +113,7 @@ async function updateSupplier(req, res) {
       });
     }
 
-    const updated = Supplier.update(id, {
+    const updated = await Supplier.update(id, {
       name: name.trim(),
       contact_person: contact_person ? contact_person.trim() : null,
       phone: phone ? phone.trim() : null,
@@ -142,7 +142,7 @@ async function updateSupplier(req, res) {
 async function deleteSupplier(req, res) {
   try {
     const { id } = req.params;
-    const existing = Supplier.getById(id);
+    const existing = await Supplier.getById(id);
     if (!existing) {
       return res.status(404).json({
         success: false,
@@ -150,7 +150,7 @@ async function deleteSupplier(req, res) {
       });
     }
 
-    Supplier.delete(id);
+    await Supplier.delete(id);
 
     res.json({
       success: true,

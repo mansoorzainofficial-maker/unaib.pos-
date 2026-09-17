@@ -7,7 +7,7 @@ const Account = require('../models/Account');
  */
 async function getAccounts(req, res) {
   try {
-    const accounts = Account.getAll();
+    const accounts = await Account.getAll();
     res.json({
       success: true,
       accounts
@@ -29,7 +29,7 @@ async function getAccounts(req, res) {
 async function getParties(req, res) {
   try {
     const partyType = req.query.type || 'supplier';
-    const parties = Ledger.getPartiesWithBalances(partyType);
+    const parties = await Ledger.getPartiesWithBalances(partyType);
     res.json({
       success: true,
       party_type: partyType,
@@ -61,7 +61,7 @@ async function getStatement(req, res) {
       });
     }
 
-    const statement = Ledger.getPartyStatement(partyType, partyId);
+    const statement = await Ledger.getPartyStatement(partyType, partyId);
     if (!statement) {
       return res.status(404).json({
         success: false,
@@ -86,15 +86,11 @@ async function getStatement(req, res) {
 /**
  * Record payment voucher inside ACID SQL transaction
  * POST /api/ledger/payment
- * Strictly mandates account_id!
  */
 async function recordPayment(req, res) {
   try {
     const { party_type, party_id, account_id, amount, entry_date, notes } = req.body;
 
-    // Strict Validation Rule:
-    // "Backend mein payment record karte waqt (POST /api/ledger/payment) account_id field ko mandatory/required rakho
-    // - agar ye missing ho to request reject karo aur clear error do 'Please select cash or bank account'"
     if (!account_id) {
       return res.status(400).json({
         success: false,
@@ -126,8 +122,7 @@ async function recordPayment(req, res) {
 
     const paymentDate = entry_date || req.body.payment_date || new Date().toISOString().split('T')[0];
 
-    // Call Model with ACID transaction
-    const updatedStatement = Ledger.recordPaymentWithTransaction({
+    const updatedStatement = await Ledger.recordPaymentWithTransaction({
       party_type,
       party_id: Number(party_id),
       account_id: Number(account_id),

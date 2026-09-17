@@ -3,9 +3,9 @@ const { query, get, run, transaction } = require('../config/db');
 /**
  * Get all shop settings
  */
-function getSettings(req, res) {
+async function getSettings(req, res) {
   try {
-    const rows = query('SELECT key, value FROM store_settings');
+    const rows = await query('SELECT key, value FROM store_settings');
     const settings = {};
     rows.forEach(r => {
       settings[r.key] = r.value;
@@ -19,16 +19,16 @@ function getSettings(req, res) {
 /**
  * Update shop settings (Admin only)
  */
-function updateSettings(req, res) {
+async function updateSettings(req, res) {
   try {
-    const settingsObj = req.body; // e.g. { store_name: "...", receipt_size: "58mm", ... }
+    const settingsObj = req.body;
 
-    transaction(({ run }) => {
+    await transaction(async ({ run: txRun }) => {
       for (const [key, value] of Object.entries(settingsObj)) {
-        run(`
+        await txRun(`
           INSERT INTO store_settings (key, value)
           VALUES (?, ?)
-          ON CONFLICT(key) DO UPDATE SET value = excluded.value
+          ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value
         `, [key, String(value)]);
       }
     });

@@ -1,4 +1,4 @@
-const { getDb, query, get, run, transaction } = require('../config/db');
+const { query, get, run, transaction } = require('../config/db');
 
 /**
  * Helper to generate sequential unique serial numbers for a product
@@ -36,7 +36,7 @@ function sanitizeProduct(product, role) {
 /**
  * Get all products with optional filters (search, category, low_stock, out_of_stock, has_serials)
  */
-function getProducts(req, res) {
+async function getProducts(req, res) {
   try {
     const { search, category_id, low_stock, out_of_stock, has_serials } = req.query;
     const role = req.user ? req.user.role : 'cashier';
@@ -85,10 +85,10 @@ function getProducts(req, res) {
 
     sql += ` ORDER BY p.name ASC`;
 
-    const products = query(sql, params);
+    const products = await query(sql, params);
     
     // Attach available in-stock serials for serialized components
-    const inStockSerials = query("SELECT product_id, serial_number FROM serial_numbers WHERE status = 'in_stock'");
+    const inStockSerials = await query("SELECT product_id, serial_number FROM serial_numbers WHERE status = 'in_stock'");
     const serialsMap = {};
     for (const s of inStockSerials) {
       if (!serialsMap[s.product_id]) serialsMap[s.product_id] = [];
@@ -115,7 +115,7 @@ function getProducts(req, res) {
 /**
  * Get low stock warnings list for dashboard alerts
  */
-function getLowStockAlerts(req, res) {
+async function getLowStockAlerts(req, res) {
   try {
     const sql = `
       SELECT p.id, p.barcode, p.name, p.stock_quantity, p.low_stock_threshold, p.sale_price,
@@ -126,7 +126,7 @@ function getLowStockAlerts(req, res) {
       WHERE p.stock_quantity <= p.low_stock_threshold
       ORDER BY p.stock_quantity ASC
     `;
-    const lowStockProducts = query(sql);
+    const lowStockProducts = await query(sql);
     return res.json({
       success: true,
       count: lowStockProducts.length,
@@ -140,12 +140,12 @@ function getLowStockAlerts(req, res) {
 /**
  * High-speed barcode lookup (called when barcode scanner fires)
  */
-function getProductByBarcode(req, res) {
+async function getProductByBarcode(req, res) {
   try {
     const { barcode } = req.params;
     const role = req.user ? req.user.role : 'cashier';
 
-    const product = get(`
+    const product = await get(`
       SELECT p.*, c.name as category_name
       FROM products p
       LEFT JOIN categories c ON p.category_id = c.id
@@ -159,10 +159,11 @@ function getProductByBarcode(req, res) {
     // Also fetch available in-stock serial numbers if item has serials
     let availableSerials = [];
     if (product.has_serials) {
-      availableSerials = query(
+      const serialRows = await query(
         "SELECT serial_number FROM serial_numbers WHERE product_id = ? AND status = 'in_stock'",
         [product.id]
-      ).map(s => s.serial_number);
+      );
+      availableSerials = serialRows.map(s => s.serial_number);
     }
 
     return res.json({
@@ -180,12 +181,12 @@ function getProductByBarcode(req, res) {
 /**
  * Get single product by ID
  */
-function getProductById(req, res) {
+async function getProductById(req, res) {
   try {
     const { id } = req.params;
     const role = req.user ? req.user.role : 'cashier';
 
-    const product = get(`
+    const product = await get(`
       SELECT p.*, c.name as category_name, s.name as supplier_name
       FROM products p
       LEFT JOIN categories c ON p.category_id = c.id
@@ -206,7 +207,7 @@ function getProductById(req, res) {
 /**
  * Create a new product (Admin only)
  */
-function createProduct(req, res) {
+async function createProduct(req, res) {
   try {
     const {
       barcode,
@@ -229,7 +230,7 @@ function createProduct(req, res) {
 
     // Check barcode uniqueness if provided
     if (barcode && barcode.trim().length > 0) {
-      const existing = get('SELECT id FROM products WHERE barcode = ?', [barcode.trim()]);
+      const existing = await get('SELECT id FROM products WHERE barcode = ?', [barcode.trim()]);
       if (existing) {
         return res.status(400).json({ success: false, message: 'A product with this barcode already exists' });
       }
@@ -240,8 +241,8 @@ function createProduct(req, res) {
     const cleanCategoryId = (category_id && Number(category_id) > 0) ? Number(category_id) : null;
     const cleanSupplierId = (supplier_id && Number(supplier_id) > 0) ? Number(supplier_id) : null;
 
-    const result = transaction(({ run }) => {
-      const insRes = run(`
+    const result = await transaction(async ({ run: txRun }) => {
+      const insRes = await txRun(`
         INSERT INTO products (
           barcode, name, category_id, cost_price, sale_price,
           stock_quantity, low_stock_threshold, supplier_id,
@@ -279,9 +280,10 @@ function createProduct(req, res) {
 
         // Insert into serial_numbers table
         for (const sn of serialsList) {
-          run(`
-            INSERT OR IGNORE INTO serial_numbers (serial_number, product_id, status)
+          await txRun(`
+            INSERT INTO serial_numbers (serial_number, product_id, status)
             VALUES (?, ?, 'in_stock')
+            ON CONFLICT DO NOTHING
           `, [sn, productId]);
         }
       }
@@ -303,7 +305,7 @@ function createProduct(req, res) {
 /**
  * Update existing product (Admin only)
  */
-function updateProduct(req, res) {
+async function updateProduct(req, res) {
   try {
     const { id } = req.params;
     const {
@@ -320,13 +322,13 @@ function updateProduct(req, res) {
       description
     } = req.body;
 
-    const existing = get('SELECT * FROM products WHERE id = ?', [id]);
+    const existing = await get('SELECT * FROM products WHERE id = ?', [id]);
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Product not found' });
     }
 
     if (barcode && barcode.trim().length > 0) {
-      const duplicate = get('SELECT id FROM products WHERE barcode = ? AND id != ?', [barcode.trim(), id]);
+      const duplicate = await get('SELECT id FROM products WHERE barcode = ? AND id != ?', [barcode.trim(), id]);
       if (duplicate) {
         return res.status(400).json({ success: false, message: 'Barcode already in use by another product' });
       }
@@ -337,8 +339,8 @@ function updateProduct(req, res) {
     const cleanCategoryId = (category_id && Number(category_id) > 0) ? Number(category_id) : null;
     const cleanSupplierId = (supplier_id && Number(supplier_id) > 0) ? Number(supplier_id) : null;
 
-    transaction(({ run, query }) => {
-      run(`
+    await transaction(async ({ run: txRun, query: txQuery }) => {
+      await txRun(`
         UPDATE products SET
           barcode = ?,
           name = ?,
@@ -371,14 +373,14 @@ function updateProduct(req, res) {
       // If item is serialized and new stock exceeds existing in-stock serial numbers count,
       // automatically generate serial numbers for the deficit!
       if (isSerialized === 1 && newStock > 0) {
-        const inStockSerials = query("SELECT serial_number FROM serial_numbers WHERE product_id = ? AND status = 'in_stock'", [id]);
+        const inStockSerials = await txQuery("SELECT serial_number FROM serial_numbers WHERE product_id = ? AND status = 'in_stock'", [id]);
         const currentCount = inStockSerials.length;
         if (currentCount < newStock) {
           const deficit = newStock - currentCount;
           const existingSNs = inStockSerials.map(s => s.serial_number);
           const newSerials = generateSequentialSerials(name.trim(), deficit, existingSNs);
           for (const sn of newSerials) {
-            run("INSERT OR IGNORE INTO serial_numbers (serial_number, product_id, status) VALUES (?, ?, 'in_stock')", [sn, id]);
+            await txRun("INSERT INTO serial_numbers (serial_number, product_id, status) VALUES (?, ?, 'in_stock') ON CONFLICT DO NOTHING", [sn, id]);
           }
         }
       }
@@ -394,16 +396,16 @@ function updateProduct(req, res) {
 /**
  * Delete product (Admin only)
  */
-function deleteProduct(req, res) {
+async function deleteProduct(req, res) {
   try {
     const { id } = req.params;
-    const existing = get('SELECT id, name FROM products WHERE id = ?', [id]);
+    const existing = await get('SELECT id, name FROM products WHERE id = ?', [id]);
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Product not found' });
     }
 
     // Check sales history
-    const saleItem = get('SELECT id FROM invoice_items WHERE product_id = ? LIMIT 1', [id]);
+    const saleItem = await get('SELECT id FROM invoice_items WHERE product_id = ? LIMIT 1', [id]);
     if (saleItem) {
       return res.status(400).json({
         success: false,
@@ -412,7 +414,7 @@ function deleteProduct(req, res) {
     }
 
     // Check purchase history
-    const purItem = get('SELECT id FROM purchase_items WHERE product_id = ? LIMIT 1', [id]);
+    const purItem = await get('SELECT id FROM purchase_items WHERE product_id = ? LIMIT 1', [id]);
     if (purItem) {
       return res.status(400).json({
         success: false,
@@ -421,7 +423,7 @@ function deleteProduct(req, res) {
     }
 
     // Check active warranty or sold serial numbers
-    const soldSN = get("SELECT id FROM serial_numbers WHERE product_id = ? AND status != 'in_stock' LIMIT 1", [id]);
+    const soldSN = await get("SELECT id FROM serial_numbers WHERE product_id = ? AND status != 'in_stock' LIMIT 1", [id]);
     if (soldSN) {
       return res.status(400).json({
         success: false,
@@ -430,9 +432,9 @@ function deleteProduct(req, res) {
     }
 
     // Safe to delete in transaction
-    transaction(({ run }) => {
-      run('DELETE FROM serial_numbers WHERE product_id = ?', [id]);
-      run('DELETE FROM products WHERE id = ?', [id]);
+    await transaction(async ({ run: txRun }) => {
+      await txRun('DELETE FROM serial_numbers WHERE product_id = ?', [id]);
+      await txRun('DELETE FROM products WHERE id = ?', [id]);
     });
 
     return res.json({ success: true, message: `Product "${existing.name}" deleted successfully` });
@@ -445,10 +447,10 @@ function deleteProduct(req, res) {
 /**
  * Automatically sync in-stock serial numbers with stock_quantity for a product
  */
-function syncProductSerials(req, res) {
+async function syncProductSerials(req, res) {
   try {
     const { id } = req.params;
-    const product = get('SELECT * FROM products WHERE id = ?', [id]);
+    const product = await get('SELECT * FROM products WHERE id = ?', [id]);
     if (!product) {
       return res.status(404).json({ success: false, message: 'Product not found' });
     }
@@ -457,7 +459,7 @@ function syncProductSerials(req, res) {
       return res.status(400).json({ success: false, message: 'Product is not configured for serial tracking' });
     }
 
-    const inStockSerials = query("SELECT serial_number FROM serial_numbers WHERE product_id = ? AND status = 'in_stock'", [id]);
+    const inStockSerials = await query("SELECT serial_number FROM serial_numbers WHERE product_id = ? AND status = 'in_stock'", [id]);
     const currentCount = inStockSerials.length;
     const targetQty = Number(product.stock_quantity) || 0;
 
@@ -475,9 +477,9 @@ function syncProductSerials(req, res) {
     const newSerials = generateSequentialSerials(product.name, needed, existingSNs);
 
     let inserted = 0;
-    transaction(({ run }) => {
+    await transaction(async ({ run: txRun }) => {
       for (const sn of newSerials) {
-        run("INSERT OR IGNORE INTO serial_numbers (serial_number, product_id, status) VALUES (?, ?, 'in_stock')", [sn, id]);
+        await txRun("INSERT INTO serial_numbers (serial_number, product_id, status) VALUES (?, ?, 'in_stock') ON CONFLICT DO NOTHING", [sn, id]);
         inserted++;
       }
     });
@@ -497,9 +499,9 @@ function syncProductSerials(req, res) {
 /**
  * Get categories list
  */
-function getCategories(req, res) {
+async function getCategories(req, res) {
   try {
-    const categories = query('SELECT * FROM categories ORDER BY name ASC');
+    const categories = await query('SELECT * FROM categories ORDER BY name ASC');
     return res.json({ success: true, categories });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
@@ -509,12 +511,12 @@ function getCategories(req, res) {
 /**
  * Create category (Admin only)
  */
-function createCategory(req, res) {
+async function createCategory(req, res) {
   try {
     const { name, description } = req.body;
     if (!name) return res.status(400).json({ success: false, message: 'Category name is required' });
 
-    const result = run('INSERT INTO categories (name, description) VALUES (?, ?)', [name.trim(), description || null]);
+    const result = await run('INSERT INTO categories (name, description) VALUES (?, ?)', [name.trim(), description || null]);
     return res.status(201).json({ success: true, categoryId: result.lastInsertRowid });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
@@ -524,9 +526,9 @@ function createCategory(req, res) {
 /**
  * Get suppliers list
  */
-function getSuppliers(req, res) {
+async function getSuppliers(req, res) {
   try {
-    const suppliers = query('SELECT * FROM suppliers ORDER BY name ASC');
+    const suppliers = await query('SELECT * FROM suppliers ORDER BY name ASC');
     return res.json({ success: true, suppliers });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });
@@ -536,20 +538,20 @@ function getSuppliers(req, res) {
 /**
  * Create supplier (Admin only)
  */
-function createSupplier(req, res) {
+async function createSupplier(req, res) {
   try {
     const { name, contact_person, phone, email, address, opening_balance } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ success: false, message: 'Supplier name is required' });
 
     const openBal = Number(opening_balance) || 0;
-    const result = run(
+    const result = await run(
       'INSERT INTO suppliers (name, contact_person, phone, email, address, current_balance) VALUES (?, ?, ?, ?, ?, ?)',
       [name.trim(), contact_person || null, phone || null, email || null, address || null, openBal]
     );
     const supplierId = result.lastInsertRowid;
 
     if (openBal > 0) {
-      run(`
+      await run(`
         INSERT INTO ledger_entries (
           party_type, party_id, entry_type, debit, credit, description, entry_date
         ) VALUES ('supplier', ?, 'opening_balance', 0, ?, 'Opening Balance (Previous Payable)', DATE('now'))
@@ -566,7 +568,7 @@ function createSupplier(req, res) {
  * Get unresolved oversold stock alerts (triggered by offline billing sync)
  * GET /api/products/alerts/oversold?status=pending|resolved|all
  */
-function getOversoldAlerts(req, res) {
+async function getOversoldAlerts(req, res) {
   try {
     const status = req.query.status || 'pending';
     let sql = `
@@ -581,7 +583,7 @@ function getOversoldAlerts(req, res) {
     }
     sql += ' ORDER BY sa.id DESC';
 
-    const alerts = query(sql, params);
+    const alerts = await query(sql, params);
     return res.json({
       success: true,
       count: alerts.length,
@@ -596,18 +598,18 @@ function getOversoldAlerts(req, res) {
  * Resolve an oversold alert
  * POST /api/products/alerts/oversold/:id/resolve
  */
-function resolveOversoldAlert(req, res) {
+async function resolveOversoldAlert(req, res) {
   try {
     const { id } = req.params;
     const userId = req.user ? req.user.id : null;
     const notes = req.body.notes || '';
 
-    const alert = get('SELECT * FROM stock_alerts WHERE id = ?', [id]);
+    const alert = await get('SELECT * FROM stock_alerts WHERE id = ?', [id]);
     if (!alert) {
       return res.status(404).json({ success: false, message: 'Stock alert not found' });
     }
 
-    run(`
+    await run(`
       UPDATE stock_alerts
       SET status = 'resolved',
           resolved_at = CURRENT_TIMESTAMP,
