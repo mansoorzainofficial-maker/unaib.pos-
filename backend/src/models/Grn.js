@@ -160,13 +160,13 @@ class Grn {
           VALUES (?, ?, ?, ?, ?, ?)
         `, [newGrnId, item.product_id, item.quantity_ordered, item.quantity_received, item.unit_cost, item.total_cost]);
 
-        // Safely increment stock with COALESCE to prevent NULL + X = NULL bugs
+        // Safely increment stock with COALESCE to prevent NULL + X = NULL bugs, and update supplier
         await txRun(`
           UPDATE products 
           SET 
             stock_quantity = COALESCE(stock_quantity, 0) + ?,
             cost_price = ?,
-            supplier_id = COALESCE(supplier_id, ?),
+            supplier_id = ?,
             updated_at = CURRENT_TIMESTAMP
           WHERE id = ?
         `, [item.quantity_received, item.unit_cost, supplier_id, item.product_id]);
