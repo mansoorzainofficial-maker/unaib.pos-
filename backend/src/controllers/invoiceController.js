@@ -409,6 +409,17 @@ async function createInvoice(req, res) {
       return { invoiceId, invoiceNumber, stockWarnings };
     });
 
+    if (invoiceResult.already_synced) {
+      const fullInvoice = await getFullInvoiceDetails(invoiceResult.id);
+      return res.status(200).json({
+        success: true,
+        already_synced: true,
+        message: 'Invoice already synced (Duplicate prevented)',
+        invoice: { ...(fullInvoice || {}), already_synced: true },
+        stock_warnings: []
+      });
+    }
+
     // Fetch complete invoice record for thermal receipt response
     const fullInvoice = await getFullInvoiceDetails(invoiceResult.invoiceId);
     if (fullInvoice) {
