@@ -6,6 +6,7 @@ export default function GrnItemRow({
   item,
   index,
   products = [],
+  categories = [],
   onChange,
   onRemove,
   onOpenAddProduct,
@@ -27,6 +28,22 @@ export default function GrnItemRow({
     });
   };
 
+  // Group products by category safely without mutating state
+  const hasCategories = Array.isArray(categories) && categories.length > 0;
+  const categorizedGroups = hasCategories
+    ? categories
+        .map(cat => ({
+          id: cat.id,
+          name: cat.name,
+          items: products.filter(p => Number(p.category_id) === Number(cat.id))
+        }))
+        .filter(g => g.items.length > 0)
+    : [];
+
+  const uncategorizedItems = products.filter(
+    p => !p.category_id || (hasCategories && !categories.some(c => Number(c.id) === Number(p.category_id)))
+  );
+
   return (
     <tr className="hover:bg-slate-50/80 transition-colors text-xs">
       <td className="py-2.5 px-3 text-center text-slate-400 font-mono">
@@ -38,6 +55,12 @@ export default function GrnItemRow({
           <select
             value={item.product_id || ''}
             onChange={(e) => handleProductChange(e.target.value)}
+            onKeyDown={(e) => {
+              // Prevent accidental form submit on Enter key
+              if (e.key === 'Enter') {
+                e.stopPropagation();
+              }
+            }}
             required
             className="flex-1 px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-900 font-semibold focus:border-amber-500 focus:ring-1 focus:ring-amber-500 focus:outline-hidden text-xs"
           >
@@ -45,16 +68,44 @@ export default function GrnItemRow({
             <option value="__new__" className="font-bold text-amber-700 bg-amber-50">
               {t('grn_select_or_add_prod')}
             </option>
-            {products.map(p => (
-              <option key={p.id} value={p.id}>
-                {p.name} ({t('grn_current_stock')} {p.stock_quantity})
-              </option>
-            ))}
+
+            {categorizedGroups.length > 0 ? (
+              <>
+                {categorizedGroups.map(group => (
+                  <optgroup key={group.id} label={`📦 ${group.name}`}>
+                    {group.items.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} ({t('grn_current_stock')} {p.stock_quantity})
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+                {uncategorizedItems.length > 0 && (
+                  <optgroup label="📦 Other / General">
+                    {uncategorizedItems.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} ({t('grn_current_stock')} {p.stock_quantity})
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </>
+            ) : (
+              products.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.name} ({t('grn_current_stock')} {p.stock_quantity})
+                </option>
+              ))
+            )}
           </select>
           {onOpenAddProduct && (
             <button
               type="button"
-              onClick={() => onOpenAddProduct(index)}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                onOpenAddProduct(index);
+              }}
               title={t('grn_quick_add_product')}
               className="p-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-lg shrink-0 shadow-xs transition-colors cursor-pointer"
             >
@@ -98,7 +149,11 @@ export default function GrnItemRow({
         {canRemove && (
           <button
             type="button"
-            onClick={() => onRemove(index)}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              onRemove(index);
+            }}
             title={t('grn_remove_row_title')}
             className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
           >

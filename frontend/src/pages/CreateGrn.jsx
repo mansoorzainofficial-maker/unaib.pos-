@@ -442,6 +442,7 @@ export default function CreateGrn({ onNavigateToList }) {
                     index={index}
                     item={item}
                     products={products}
+                    categories={categories}
                     onChange={handleItemChange}
                     onRemove={handleRemoveItemRow}
                     onOpenAddProduct={(rowIndex) => {
