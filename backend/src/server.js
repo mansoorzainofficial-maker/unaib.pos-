@@ -69,9 +69,11 @@ app.use(async (req, res, next) => {
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
+  const { isPostgres } = require('./config/db');
   res.json({
     status: 'ok',
     service: 'Unaib Computer Accessories POS API',
+    database: isPostgres ? 'postgresql (supabase)' : 'sqlite (local)',
     timestamp: new Date().toISOString()
   });
 });
