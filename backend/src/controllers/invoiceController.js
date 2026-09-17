@@ -45,7 +45,8 @@ async function createInvoice(req, res) {
       paid_amount,
       notes,
       is_offline_sync,
-      offline_created_at
+      offline_created_at,
+      offline_local_id
     } = req.body;
 
     if (!items || !Array.isArray(items) || items.length === 0) {
@@ -56,6 +57,25 @@ async function createInvoice(req, res) {
 
     // Run transaction
     const invoiceResult = await transaction(async ({ query: txQuery, get: txGet, run: txRun }) => {
+      // 0. Offline Deduplication Check: Prevent duplicate invoices and double stock reduction
+      if (offline_local_id) {
+        const marker = `[OFFLINE_ID:${offline_local_id}]`;
+        const existingInvoice = await txGet(
+          'SELECT id, invoice_number, grand_total, paid_amount, balance_due FROM invoices WHERE notes LIKE ? LIMIT 1',
+          [`%${marker}%`]
+        );
+        if (existingInvoice) {
+          return {
+            id: existingInvoice.id,
+            invoice_number: existingInvoice.invoice_number,
+            grand_total: existingInvoice.grand_total,
+            paid_amount: existingInvoice.paid_amount,
+            balance_due: existingInvoice.balance_due,
+            already_synced: true
+          };
+        }
+      }
+
       // 1. Resolve or create Customer (Match by ID, Phone, or Name)
       let customerId = customer_id ? Number(customer_id) : null;
       const cleanPhone = customer_phone ? customer_phone.trim() : null;
@@ -249,7 +269,9 @@ async function createInvoice(req, res) {
         changeAmount,
         balanceDue,
         payment_method || 'cash',
-        notes || null,
+        offline_local_id
+          ? (notes ? `${notes} [OFFLINE_ID:${offline_local_id}]` : `[OFFLINE_ID:${offline_local_id}]`)
+          : (notes || null),
         prevCustomerBalance,
         newCustomerBalance
       ]);

@@ -18,7 +18,7 @@ export default function CreateGrn({ onNavigateToList }) {
   const [receivedDate, setReceivedDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [notes, setNotes] = useState('');
   const [items, setItems] = useState([
-    { product_id: '', quantity_ordered: 1, quantity_received: 1, unit_cost: 0 }
+    { product_id: '', category_id: '', quantity_ordered: 1, quantity_received: 1, unit_cost: 0 }
   ]);
   const [loading, setLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -97,7 +97,7 @@ export default function CreateGrn({ onNavigateToList }) {
       }
       // Remove any other completely blank rows so validation never gets blocked
       const valid = next.filter(it => it.product_id);
-      return valid.length > 0 ? valid : [{ product_id: '', quantity_ordered: 1, quantity_received: 1, unit_cost: 0 }];
+      return valid.length > 0 ? valid : [{ product_id: '', category_id: '', quantity_ordered: 1, quantity_received: 1, unit_cost: 0 }];
     });
 
     setSuccessMsg(isUrdu
@@ -119,7 +119,7 @@ export default function CreateGrn({ onNavigateToList }) {
   const handleAddItemRow = () => {
     setItems(prev => [
       ...prev,
-      { product_id: '', quantity_ordered: 1, quantity_received: 1, unit_cost: 0 }
+      { product_id: '', category_id: '', quantity_ordered: 1, quantity_received: 1, unit_cost: 0 }
     ]);
   };
 
@@ -189,7 +189,7 @@ export default function CreateGrn({ onNavigateToList }) {
           : `✓ GRN #${res.grn.grn_number} saved successfully! Inventory and ledger updated.`
         );
         // Reset form
-        setItems([{ product_id: '', quantity_ordered: 1, quantity_received: 1, unit_cost: 0 }]);
+        setItems([{ product_id: '', category_id: '', quantity_ordered: 1, quantity_received: 1, unit_cost: 0 }]);
         setNotes('');
         loadMeta();
         setTimeout(() => {
@@ -428,10 +428,11 @@ export default function CreateGrn({ onNavigateToList }) {
               <thead>
                 <tr className="bg-slate-100/80 text-slate-600 font-bold border-b border-slate-200">
                   <th className="py-2.5 px-3 text-center w-12">{t('grn_col_num')}</th>
+                  <th className="py-2.5 px-3 w-48">{t('grn_col_category')}</th>
                   <th className="py-2.5 px-3">{t('grn_col_product')}</th>
-                  <th className="py-2.5 px-3 text-center">{t('grn_col_qty_rec')}</th>
-                  <th className="py-2.5 px-3 text-right">{t('grn_col_cost')}</th>
-                  <th className="py-2.5 px-3 text-left">{t('grn_col_total')}</th>
+                  <th className="py-2.5 px-3 text-center w-28">{t('grn_col_qty_rec')}</th>
+                  <th className="py-2.5 px-3 text-right w-36">{t('grn_col_cost')}</th>
+                  <th className="py-2.5 px-3 text-left w-32">{t('grn_col_total')}</th>
                   <th className="py-2.5 px-3 text-center w-12">{t('grn_col_action')}</th>
                 </tr>
               </thead>
