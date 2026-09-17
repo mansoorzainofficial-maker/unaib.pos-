@@ -129,12 +129,14 @@ class Grn {
         calculatedTotal += lineTotal;
 
         validatedItems.push({
-          product_id: product.id,
+          product_id: Number(product.id),
           product_name: product.name,
+          has_serials: Boolean(product.has_serials),
           quantity_ordered: qtyOrdered,
           quantity_received: qtyReceived,
           unit_cost: unitCost,
-          total_cost: lineTotal
+          total_cost: lineTotal,
+          serials: Array.isArray(item.serials) ? item.serials : (Array.isArray(item.serial_numbers) ? item.serial_numbers : [])
         });
       }
 
@@ -158,14 +160,31 @@ class Grn {
           VALUES (?, ?, ?, ?, ?, ?)
         `, [newGrnId, item.product_id, item.quantity_ordered, item.quantity_received, item.unit_cost, item.total_cost]);
 
+        // Safely increment stock with COALESCE to prevent NULL + X = NULL bugs
         await txRun(`
           UPDATE products 
           SET 
-            stock_quantity = stock_quantity + ?,
+            stock_quantity = COALESCE(stock_quantity, 0) + ?,
             cost_price = ?,
+            supplier_id = COALESCE(supplier_id, ?),
             updated_at = CURRENT_TIMESTAMP
           WHERE id = ?
-        `, [item.quantity_received, item.unit_cost, item.product_id]);
+        `, [item.quantity_received, item.unit_cost, supplier_id, item.product_id]);
+
+        // If item has serials and serials are provided, register them in stock
+        if (item.has_serials && item.serials && item.serials.length > 0) {
+          for (const sn of item.serials) {
+            const cleanSn = String(sn).trim();
+            if (!cleanSn) continue;
+            await txRun(`
+              INSERT INTO serial_numbers (serial_number, product_id, status)
+              VALUES (?, ?, 'in_stock')
+              ON CONFLICT(serial_number) DO UPDATE SET
+                status = 'in_stock',
+                product_id = excluded.product_id
+            `, [cleanSn, item.product_id]);
+          }
+        }
       }
 
       // 6. Handle Payment Type
