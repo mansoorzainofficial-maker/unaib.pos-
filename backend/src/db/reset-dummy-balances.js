@@ -35,8 +35,8 @@ function resetBalancesAndDummyData() {
   db.exec('DELETE FROM warranty_claims;');
   db.exec('DELETE FROM serial_numbers;');
 
-  // 5. Reset product stock quantities to 0 (clean state awaiting fresh GRNs/purchases)
-  db.exec('UPDATE products SET stock_quantity = 0;');
+  // 5. Delete all demo products (clean state awaiting fresh catalog)
+  db.exec('DELETE FROM products;');
 
   // 6. Reset Financial Accounts & Accounts Ledger
   try {
