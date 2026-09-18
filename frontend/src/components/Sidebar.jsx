@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import {
@@ -20,6 +20,20 @@ import {
 export default function Sidebar({ currentTab, setTab }) {
   const { isAdmin } = useAuth();
   const { t, isUrdu } = useLanguage();
+  const [dbLabel, setDbLabel] = useState('');
+
+  useEffect(() => {
+    let isMounted = true;
+    fetch('/api/health')
+      .then(res => res.json())
+      .then(data => {
+        if (isMounted && data?.database) {
+          setDbLabel(data.database);
+        }
+      })
+      .catch(() => {});
+    return () => { isMounted = false; };
+  }, []);
 
   const mainNavItems = [
     { id: 'pos', label: t('nav_pos'), icon: ShoppingCart },
@@ -114,9 +128,11 @@ export default function Sidebar({ currentTab, setTab }) {
           </button>
         )}
 
-        <div className="px-2.5 py-1.5 bg-slate-50/80 rounded-lg text-[10px] text-slate-500 flex justify-between items-center">
-          <span className="font-medium text-slate-400">System</span>
-          <span className="font-mono font-bold text-slate-700">v1.0.0 (SQLite)</span>
+        <div className="px-2.5 py-1.5 bg-slate-50/80 rounded-lg text-[10px] text-slate-500 flex justify-between items-center gap-1">
+          <span className="font-medium text-slate-400 shrink-0">System</span>
+          <span className="font-mono font-bold text-slate-700 truncate text-[9.5px]" title={dbLabel ? `v1.0.0 (${dbLabel})` : 'v1.0.0'}>
+            v1.0.0 {dbLabel ? `(${dbLabel})` : ''}
+          </span>
         </div>
       </div>
     </aside>
