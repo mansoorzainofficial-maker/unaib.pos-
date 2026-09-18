@@ -20,19 +20,56 @@ import {
 export default function Sidebar({ currentTab, setTab }) {
   const { isAdmin } = useAuth();
   const { t, isUrdu } = useLanguage();
-  const [dbLabel, setDbLabel] = useState('');
+  const [dbLabel, setDbLabel] = useState(() => (navigator.onLine ? '' : 'SQLite (Local)'));
 
   useEffect(() => {
     let isMounted = true;
-    fetch('/api/health')
-      .then(res => res.json())
-      .then(data => {
-        if (isMounted && data?.database) {
-          setDbLabel(data.database);
-        }
-      })
-      .catch(() => {});
-    return () => { isMounted = false; };
+
+    const checkStatus = () => {
+      if (!navigator.onLine) {
+        if (isMounted) setDbLabel('SQLite (Local)');
+        return;
+      }
+      fetch('/api/health')
+        .then(res => res.json())
+        .then(data => {
+          if (isMounted && data?.database) {
+            const raw = data.database.toLowerCase();
+            if (raw.includes('postgres')) {
+              setDbLabel('PostgreSQL (Cloud)');
+            } else {
+              setDbLabel('SQLite (Local)');
+            }
+          }
+        })
+        .catch(() => {
+          if (isMounted) setDbLabel('SQLite (Local)');
+        });
+    };
+
+    checkStatus();
+
+    const handleOnline = () => {
+      // Connection restored: instantly re-verify and update label to PostgreSQL (Cloud) without reload
+      checkStatus();
+    };
+
+    const handleOffline = () => {
+      // Connection lost: instantly update label to SQLite (Local)
+      if (isMounted) setDbLabel('SQLite (Local)');
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    const timer = setInterval(checkStatus, 15000);
+
+    return () => {
+      isMounted = false;
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      clearInterval(timer);
+    };
   }, []);
 
   const mainNavItems = [
