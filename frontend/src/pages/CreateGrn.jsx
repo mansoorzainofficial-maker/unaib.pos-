@@ -246,19 +246,19 @@ export default function CreateGrn({ onNavigateToList }) {
 
       {/* Form Card */}
       <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Header Details Card */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-4 text-xs">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Header Details Card - Compact Single Row Grid */}
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-3.5 space-y-3 text-xs">
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
             {/* Supplier Selector */}
-            <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="block font-bold text-slate-800">
+            <div className="md:col-span-4">
+              <div className="flex items-center justify-between mb-1">
+                <label className="block font-bold text-slate-800 text-[11px]">
                   {t('grn_supplier_label')}
                 </label>
                 <button
                   type="button"
                   onClick={() => setIsAddSupplierOpen(true)}
-                  className="text-[11px] font-bold text-amber-800 hover:text-amber-950 bg-amber-100 hover:bg-amber-200 px-2 py-0.5 rounded-lg border border-amber-300 transition-colors flex items-center gap-1 cursor-pointer"
+                  className="text-[10px] font-bold text-amber-800 hover:text-amber-950 bg-amber-100 hover:bg-amber-200 px-2 py-0.5 rounded-lg border border-amber-300 transition-colors flex items-center gap-1 cursor-pointer"
                 >
                   <Plus className="w-3 h-3" />
                   <span>{t('grn_quick_add_supplier')}</span>
@@ -274,7 +274,7 @@ export default function CreateGrn({ onNavigateToList }) {
                   }
                 }}
                 required
-                className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-slate-900 font-bold focus:border-amber-500 focus:ring-2 focus:ring-amber-200 focus:outline-hidden text-xs"
+                className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-xl text-slate-900 font-bold focus:border-amber-500 focus:ring-2 focus:ring-amber-200 focus:outline-hidden text-xs"
               >
                 <option value="">{t('grn_select_supplier_option')}</option>
                 <option value="__new__" className="font-bold text-amber-700 bg-amber-50">
@@ -289,17 +289,17 @@ export default function CreateGrn({ onNavigateToList }) {
             </div>
 
             {/* Payment Type (Cash or Credit) */}
-            <div>
-              <label className="block font-bold text-slate-800 mb-1.5">
+            <div className="md:col-span-3">
+              <label className="block font-bold text-slate-800 mb-1 text-[11px]">
                 {t('grn_payment_type_label')}
               </label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-1.5">
                 <button
                   type="button"
                   onClick={() => setPaymentType('credit')}
-                  className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                  className={`py-1.5 px-2 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                     paymentType === 'credit'
-                      ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-xs'
+                      ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-xs font-black'
                       : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                   }`}
                 >
@@ -308,9 +308,9 @@ export default function CreateGrn({ onNavigateToList }) {
                 <button
                   type="button"
                   onClick={() => setPaymentType('cash')}
-                  className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                  className={`py-1.5 px-2 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
                     paymentType === 'cash'
-                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs font-black'
                       : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                   }`}
                 >
@@ -320,8 +320,8 @@ export default function CreateGrn({ onNavigateToList }) {
             </div>
 
             {/* Received Date */}
-            <div>
-              <label className="block font-bold text-slate-800 mb-1.5">
+            <div className="md:col-span-2">
+              <label className="block font-bold text-slate-800 mb-1 text-[11px]">
                 {t('grn_date_label')}
               </label>
               <input
@@ -329,39 +329,42 @@ export default function CreateGrn({ onNavigateToList }) {
                 required
                 value={receivedDate}
                 onChange={(e) => setReceivedDate(e.target.value)}
-                className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-slate-900 font-semibold focus:border-amber-500 focus:ring-2 focus:ring-amber-200 focus:outline-hidden"
+                className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-xl text-slate-900 font-semibold focus:border-amber-500 focus:outline-hidden text-xs"
               />
             </div>
-          </div>
 
-          {/* Notes */}
-          <div>
-            <label className="block font-bold text-slate-800 mb-1.5">
-              {t('grn_notes_label')}
-            </label>
-            <input
-              type="text"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder={t('grn_notes_placeholder')}
-              className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-slate-900 focus:border-amber-500 focus:outline-hidden"
-            />
+            {/* Notes */}
+            <div className="md:col-span-3">
+              <label className="block font-bold text-slate-800 mb-1 text-[11px]">
+                {t('grn_notes_label')}
+              </label>
+              <input
+                type="text"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder={t('grn_notes_placeholder')}
+                className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-xl text-slate-900 focus:border-amber-500 focus:outline-hidden text-xs"
+              />
+            </div>
           </div>
         </div>
 
         {/* Dynamic Items Table Card */}
         <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-          <div className="p-3.5 border-b border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-2">
-            <span className="font-bold text-xs text-slate-800">
-              {t('grn_items_breakdown')} ({items.length} {t('grn_items_badge')})
+          <div className="p-3 border-b border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-2">
+            <span className="font-bold text-xs text-slate-800 flex items-center gap-1.5">
+              <span>{t('grn_items_breakdown')}</span>
+              <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-mono font-bold">
+                {items.length} {t('grn_items_badge')}
+              </span>
             </span>
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={handleAddItemRow}
-                className="flex items-center space-x-1.5 px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-xl text-xs shadow-xs transition-colors cursor-pointer"
+                className="flex items-center space-x-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-xl text-xs shadow-xs transition-colors cursor-pointer"
               >
-                <Plus className="w-4 h-4" />
+                <Plus className="w-3.5 h-3.5" />
                 <span>{isUrdu ? '+ نئی قطار شامل کریں' : '+ Add Row to GRN'}</span>
               </button>
             </div>
@@ -401,14 +404,14 @@ export default function CreateGrn({ onNavigateToList }) {
             </table>
           </div>
 
-          {/* Grand Total & Submission Bar */}
-          <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          {/* Sticky Grand Total & Submission Bar (Always visible without scrolling) */}
+          <div className="sticky bottom-0 p-3.5 bg-white/95 backdrop-blur-xs border-t-2 border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-md z-10">
             <div className="flex items-center space-x-3">
               <span className="text-xs font-bold text-slate-600">{t('grn_grand_total_label')}</span>
-              <span className="font-mono text-xl font-black text-amber-900">
+              <span className="font-mono text-2xl font-black text-amber-900">
                 Rs. {calculatedGrandTotal.toLocaleString()}
               </span>
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-slate-200 text-slate-700">
+              <span className="text-xs font-bold px-2.5 py-0.5 rounded-lg bg-amber-100 text-amber-900 border border-amber-300">
                 {paymentType === 'credit' ? t('grn_on_credit') : t('grn_on_cash')}
               </span>
             </div>
@@ -416,7 +419,7 @@ export default function CreateGrn({ onNavigateToList }) {
             <button
               type="submit"
               disabled={isSubmitting || items.every(it => !it.product_id)}
-              className="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 text-slate-950 font-black rounded-xl text-xs shadow-md shadow-amber-500/20 flex items-center justify-center space-x-2 transition-all cursor-pointer"
+              className="px-6 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 text-slate-950 font-black rounded-xl text-xs shadow-md shadow-amber-500/20 flex items-center justify-center space-x-2 transition-all cursor-pointer"
             >
               {isSubmitting ? (
                 <>

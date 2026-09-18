@@ -52,6 +52,32 @@ export default function GrnItemRow({
     });
   };
 
+  const [searchQuery, setSearchQuery] = React.useState('');
+  const [isOpen, setIsOpen] = React.useState(false);
+  const [highlightedIndex, setHighlightedIndex] = React.useState(0);
+  const inputRef = React.useRef(null);
+  const dropdownRef = React.useRef(null);
+
+  // Close dropdown on click outside
+  React.useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Filter products by search query
+  const matches = searchQuery.trim()
+    ? filteredProducts.filter(p =>
+        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (p.barcode && p.barcode.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        String(p.id) === searchQuery.trim()
+      )
+    : filteredProducts;
+
   return (
     <tr className="hover:bg-slate-50/80 transition-colors text-xs">
       {/* 1. Row Number */}
@@ -81,30 +107,132 @@ export default function GrnItemRow({
         </select>
       </td>
 
-      {/* 3. Product Dropdown */}
-      <td className="py-2.5 px-3 min-w-[260px]">
-        <select
-          value={item.product_id || ''}
-          onChange={(e) => handleProductChange(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              e.stopPropagation();
-            }
-          }}
-          required
-          className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-900 font-semibold focus:border-amber-500 focus:ring-1 focus:ring-amber-500 focus:outline-hidden text-xs"
-        >
-          <option value="">{t('grn_select_product_option')}</option>
-          <option value="__new__" className="font-bold text-amber-700 bg-amber-50">
-            {t('grn_select_or_add_prod') || (isUrdu ? '➕ + نیا پراڈکٹ رجسٹر کریں...' : '➕ + Register New Product...')}
-          </option>
-          {filteredProducts.map(p => (
-            <option key={p.id} value={p.id}>
-              {p.name} ({t('grn_current_stock')} {p.stock_quantity})
-            </option>
-          ))}
-        </select>
+      {/* 3. Searchable Product Selector (Zero-Scroll Combobox) */}
+      <td className="py-2.5 px-3 min-w-[280px]">
+        {currentProduct ? (
+          <div className="flex items-center justify-between gap-1.5 px-2.5 py-1.5 bg-amber-50/80 border border-amber-300 rounded-lg text-xs shadow-2xs">
+            <div className="flex-1 min-w-0">
+              <div className="font-bold text-slate-900 truncate">{currentProduct.name}</div>
+              <div className="text-[10px] text-slate-500 flex items-center gap-1.5">
+                {currentProduct.barcode && (
+                  <span className="font-mono bg-white px-1 rounded border border-slate-200">
+                    [{currentProduct.barcode}]
+                  </span>
+                )}
+                <span className="text-amber-800 font-semibold">
+                  {t('grn_current_stock')} {currentProduct.stock_quantity}
+                </span>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                handleProductChange('');
+                setSearchQuery('');
+                setIsOpen(true);
+                setTimeout(() => inputRef.current?.focus(), 50);
+              }}
+              title={isUrdu ? 'پراڈکٹ تبدیل کریں (Change)' : 'Change Product'}
+              className="px-1.5 py-0.5 bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 border border-slate-200 rounded text-[10px] font-bold transition-colors cursor-pointer shrink-0"
+            >
+              ✕ {isUrdu ? 'بدلیں' : 'Change'}
+            </button>
+          </div>
+        ) : (
+          <div className="relative" ref={dropdownRef}>
+            <div className="relative">
+              <input
+                ref={inputRef}
+                type="text"
+                placeholder={isUrdu ? "🔍 پراڈکٹ کا نام یا بارکوڈ لکھیں (جیسے Mouse, SSD)..." : "🔍 Type name or scan barcode..."}
+                value={searchQuery}
+                onFocus={() => setIsOpen(true)}
+                onChange={(e) => {
+                  setSearchQuery(e.target.value);
+                  setIsOpen(true);
+                  setHighlightedIndex(0);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setHighlightedIndex(prev => Math.min(prev + 1, matches.length - 1));
+                  } else if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setHighlightedIndex(prev => Math.max(prev - 1, 0));
+                  } else if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (matches.length > 0) {
+                      const target = matches[Math.min(highlightedIndex, matches.length - 1)];
+                      if (target) {
+                        handleProductChange(target.id);
+                        setIsOpen(false);
+                        setSearchQuery('');
+                      }
+                    } else if (onOpenAddProduct) {
+                      setIsOpen(false);
+                      onOpenAddProduct(index);
+                    }
+                  } else if (e.key === 'Escape') {
+                    setIsOpen(false);
+                  }
+                }}
+                required={!item.product_id}
+                className="w-full px-2.5 py-1.5 bg-white border-2 border-amber-400 rounded-lg text-slate-900 font-semibold focus:ring-2 focus:ring-amber-200 focus:outline-hidden text-xs placeholder:text-slate-400 shadow-2xs"
+              />
+            </div>
+
+            {/* Instant Filter Dropdown */}
+            {isOpen && (
+              <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-50 max-h-56 overflow-y-auto divide-y divide-slate-100">
+                {/* Quick Add at top */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsOpen(false);
+                    if (onOpenAddProduct) onOpenAddProduct(index);
+                  }}
+                  className="w-full px-3 py-2 text-left bg-amber-50 hover:bg-amber-100 text-amber-900 font-bold flex items-center gap-1.5 text-xs transition-colors cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5 text-amber-700" />
+                  <span>{t('grn_select_or_add_prod') || (isUrdu ? '➕ + نیا پراڈکٹ رجسٹر کریں...' : '➕ + Register New Product...')}</span>
+                </button>
+
+                {/* Filtered Matches */}
+                {matches.slice(0, 12).map((p, pIdx) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => {
+                      handleProductChange(p.id);
+                      setIsOpen(false);
+                      setSearchQuery('');
+                    }}
+                    className={`w-full px-3 py-2 text-left flex items-center justify-between transition-colors cursor-pointer text-xs ${
+                      highlightedIndex === pIdx ? 'bg-amber-100/90 font-bold' : 'hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex-1 min-w-0 pr-2">
+                      <div className="font-semibold text-slate-900 truncate">{p.name}</div>
+                      <div className="text-[10px] text-slate-500 flex items-center gap-1.5">
+                        {p.barcode && <span className="font-mono bg-slate-100 px-1 rounded">[{p.barcode}]</span>}
+                        <span>{t('grn_current_stock')} {p.stock_quantity}</span>
+                      </div>
+                    </div>
+                    <div className="text-right font-mono font-bold text-amber-800 text-[11px] shrink-0">
+                      Rs. {Number(p.cost_price || 0).toLocaleString()}
+                    </div>
+                  </button>
+                ))}
+
+                {matches.length === 0 && (
+                  <div className="p-3 text-center text-xs text-slate-400">
+                    {isUrdu ? 'کوئی پراڈکٹ نہیں ملا۔ نیا بنانے کے لیے اوپر کلک کریں۔' : 'No matching product found. Click above to add.'}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </td>
 
       {/* 4. Quantity Received */}

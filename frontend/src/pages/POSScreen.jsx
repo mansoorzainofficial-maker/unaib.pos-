@@ -673,6 +673,25 @@ export default function POSScreen({ onLowStockChange }) {
                       setFastSearch(e.target.value);
                       setShowSearchDropdown(true);
                     }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const query = fastSearch.trim().toLowerCase();
+                        if (!query) return;
+                        const matches = products.filter(p =>
+                          p.name.toLowerCase().includes(query) ||
+                          (p.barcode && p.barcode.toLowerCase().includes(query)) ||
+                          String(p.id) === query
+                        );
+                        if (matches.length > 0) {
+                          addToCart(matches[0]);
+                          setFastSearch('');
+                          setShowSearchDropdown(false);
+                        }
+                      } else if (e.key === 'Escape') {
+                        setShowSearchDropdown(false);
+                      }
+                    }}
                     className="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-hidden"
                   />
                 </div>
@@ -1017,67 +1036,68 @@ export default function POSScreen({ onLowStockChange }) {
         isOpen={isCheckoutOpen}
         onClose={() => setIsCheckoutOpen(false)}
         title={t('payment_modal_title')}
-        maxWidth="max-w-xl"
+        maxWidth="max-w-5xl"
       >
-        <div className="space-y-4">
-          {/* Total Summary Header Card */}
-          <div className="bg-slate-900 text-white p-4 rounded-2xl flex items-center justify-between shadow-lg">
-            <div>
-              <div className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">{t('grand_total')}</div>
-              <div className="text-3xl font-black font-mono text-emerald-400 tracking-tight">
-                Rs. {grandTotal.toLocaleString()}
-              </div>
-            </div>
-            <div className="text-right">
-              <span className="px-3 py-1 bg-slate-800 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold font-mono">
-                {cart.reduce((s, i) => s + i.quantity, 0)} {isUrdu ? 'سامان' : 'Items'}
-              </span>
-            </div>
-          </div>
-
-          {/* Direct Final Deal Amount & Item Rates Controller inside Checkout Window */}
-          <div className="bg-emerald-50/90 p-3 rounded-2xl border border-emerald-200 space-y-2.5">
-            <div className="flex items-center justify-between gap-3">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+          {/* LEFT COLUMN: Bill Items, Rates & Deal Adjuster (Zero-Scroll Column) */}
+          <div className="lg:col-span-6 space-y-3 flex flex-col">
+            {/* Total Summary Header Card */}
+            <div className="bg-slate-900 text-white p-3.5 rounded-2xl flex items-center justify-between shadow-lg">
               <div>
-                <div className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
-                  <span className="text-base">🏷️</span>
-                  <span>{isUrdu ? 'فائنل بل رقم (طے شدہ ریٹ):' : 'Final Bill / Deal Amount:'}</span>
-                </div>
-                <div className="text-[10.5px] text-emerald-700">
-                  {discountAmount > 0
-                    ? (isUrdu ? `اصل سب ٹوٹل: Rs. ${subtotal.toLocaleString()} | رعایت: Rs. ${discountAmount.toLocaleString()}` : `Subtotal: Rs. ${subtotal.toLocaleString()} | Discount: Rs. ${discountAmount.toLocaleString()}`)
-                    : (isUrdu ? 'بل راؤنڈ کرنے یا گاہک کو رعایت دینے کے لیے یہاں رقم لکھیں' : 'Change total to apply custom deal discount')}
+                <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">{t('grand_total')}</div>
+                <div className="text-2xl font-black font-mono text-emerald-400 tracking-tight">
+                  Rs. {grandTotal.toLocaleString()}
                 </div>
               </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <span className="text-xs font-bold text-emerald-800 font-mono">Rs.</span>
-                <input
-                  type="number"
-                  min="0"
-                  value={grandTotal}
-                  onChange={(e) => {
-                    const enteredVal = e.target.value;
-                    if (enteredVal === '') {
-                      setDiscountType('amount');
-                      setDiscountValue(0);
-                      return;
-                    }
-                    const newTotal = Number(enteredVal);
-                    if (!isNaN(newTotal) && newTotal >= 0) {
-                      const diff = Math.max(0, subtotal - newTotal);
-                      setDiscountType('amount');
-                      setDiscountValue(diff);
-                    }
-                  }}
-                  className="w-32 px-3 py-1.5 bg-white border-2 border-emerald-500 rounded-xl text-sm font-mono font-black text-right text-emerald-950 focus:outline-hidden focus:ring-2 focus:ring-emerald-400 shadow-xs"
-                  title={isUrdu ? 'فائنل بل رقم تبدیل کریں' : 'Edit final deal amount'}
-                />
+              <div className="text-right">
+                <span className="px-2.5 py-1 bg-slate-800 text-slate-200 border border-slate-700 rounded-xl text-xs font-bold font-mono">
+                  {cart.reduce((s, i) => s + i.quantity, 0)} {isUrdu ? 'سامان' : 'Items'}
+                </span>
               </div>
             </div>
 
-            {/* Quick Rounding Presets and Toggle for Line Items */}
-            <div className="flex flex-wrap items-center justify-between pt-1.5 border-t border-emerald-200 text-[11px] gap-1.5">
-              <div className="flex items-center gap-1">
+            {/* Direct Final Deal Amount & Quick Rounding */}
+            <div className="bg-emerald-50/90 p-3 rounded-2xl border border-emerald-200 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <div className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                    <span className="text-base">🏷️</span>
+                    <span>{isUrdu ? 'فائنل بل رقم (طے شدہ ریٹ):' : 'Final Bill / Deal Amount:'}</span>
+                  </div>
+                  <div className="text-[10.5px] text-emerald-700">
+                    {discountAmount > 0
+                      ? (isUrdu ? `اصل سب ٹوٹل: Rs. ${subtotal.toLocaleString()} | رعایت: Rs. ${discountAmount.toLocaleString()}` : `Subtotal: Rs. ${subtotal.toLocaleString()} | Discount: Rs. ${discountAmount.toLocaleString()}`)
+                      : (isUrdu ? 'بل راؤنڈ کرنے یا گاہک کو رعایت دینے کے لیے یہاں رقم لکھیں' : 'Change total to apply custom deal discount')}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className="text-xs font-bold text-emerald-800 font-mono">Rs.</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={grandTotal}
+                    onChange={(e) => {
+                      const enteredVal = e.target.value;
+                      if (enteredVal === '') {
+                        setDiscountType('amount');
+                        setDiscountValue(0);
+                        return;
+                      }
+                      const newTotal = Number(enteredVal);
+                      if (!isNaN(newTotal) && newTotal >= 0) {
+                        const diff = Math.max(0, subtotal - newTotal);
+                        setDiscountType('amount');
+                        setDiscountValue(diff);
+                      }
+                    }}
+                    className="w-28 px-2.5 py-1 bg-white border-2 border-emerald-500 rounded-xl text-sm font-mono font-black text-right text-emerald-950 focus:outline-hidden focus:ring-2 focus:ring-emerald-400 shadow-xs"
+                    title={isUrdu ? 'فائنل بل رقم تبدیل کریں' : 'Edit final deal amount'}
+                  />
+                </div>
+              </div>
+
+              {/* Quick Rounding Presets */}
+              <div className="flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-emerald-200 text-[11px]">
                 <span className="font-bold text-emerald-900 mr-1">{isUrdu ? 'راؤنڈ آف:' : 'Round:'}</span>
                 {subtotal % 100 !== 0 && (
                   <button
@@ -1114,34 +1134,35 @@ export default function POSScreen({ onLowStockChange }) {
                     }}
                     className="px-2 py-0.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-md font-bold cursor-pointer transition-colors"
                   >
-                    {isUrdu ? 'رعایت ختم (Reset)' : 'Reset'}
+                    {isUrdu ? 'رعایت ختم' : 'Reset'}
                   </button>
                 )}
               </div>
-
-              <button
-                type="button"
-                onClick={() => setShowCheckoutItems(!showCheckoutItems)}
-                className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-md font-bold cursor-pointer transition-colors flex items-center gap-1"
-              >
-                <span>{showCheckoutItems ? '▲' : '▼'}</span>
-                <span>{showCheckoutItems ? (isUrdu ? 'سامان لسٹ چھپائیں' : 'Hide Items') : (isUrdu ? 'سامان کے ریٹ بدلیں' : 'Edit Item Rates')}</span>
-              </button>
             </div>
 
-            {/* Collapsible Line Items Rate Editor inside Checkout Modal */}
-            {showCheckoutItems && (
-              <div className="mt-2 pt-2 border-t border-emerald-200 max-h-48 overflow-y-auto space-y-1.5 pr-1">
-                <div className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">
-                  {isUrdu ? 'ہر سامان کا ریٹ ونڈو کے اندر ہی تبدیل کریں:' : 'Edit line rates directly inside checkout window:'}
-                </div>
+            {/* Bill Items & Live Rates Table - PROMINENT & OPEN (Zero-Scroll Design) */}
+            <div className="bg-slate-50 rounded-2xl border border-slate-200 p-3 flex-1 flex flex-col shadow-2xs">
+              <div className="flex items-center justify-between mb-2 text-xs">
+                <span className="font-bold text-slate-800 flex items-center gap-1.5">
+                  <span>📦</span>
+                  <span>{isUrdu ? 'بل کا سامان و ریٹ (براہِ راست تبدیل کریں):' : 'Bill Items & Editable Rates:'}</span>
+                </span>
+                <span className="text-[10px] text-slate-500 font-mono bg-white px-2 py-0.5 rounded border border-slate-200">
+                  {cart.length} {isUrdu ? 'اقسام' : 'items'}
+                </span>
+              </div>
+
+              <div className="max-h-60 overflow-y-auto space-y-1.5 pr-1">
                 {cart.map((item) => (
                   <div key={item.product_id} className="bg-white p-2 rounded-xl border border-slate-200 flex items-center justify-between text-xs gap-2 shadow-2xs">
                     <div className="flex-1 min-w-0">
-                      <div className="font-semibold text-slate-900 truncate">{item.name}</div>
-                      <div className="text-[10px] text-slate-500 font-mono">
-                        Qty: {item.quantity} {item.cost_price > 0 && Number(item.sale_price) < Number(item.cost_price) && (
-                          <span className="text-amber-700 font-bold ml-1">⚠️ Cost: Rs. {item.cost_price}</span>
+                      <div className="font-bold text-slate-900 truncate">{item.name}</div>
+                      <div className="text-[10px] text-slate-500 font-mono flex items-center gap-1.5">
+                        <span>Qty: {item.quantity}</span>
+                        {item.cost_price > 0 && Number(item.sale_price) < Number(item.cost_price) && (
+                          <span className="text-amber-800 bg-amber-100 px-1 py-0.2 rounded font-bold border border-amber-300">
+                            ⚠️ Cost: Rs. {item.cost_price}
+                          </span>
                         )}
                       </div>
                     </div>
@@ -1152,518 +1173,455 @@ export default function POSScreen({ onLowStockChange }) {
                         min="0"
                         value={item.sale_price}
                         onChange={(e) => handlePriceChange(item.product_id, e.target.value)}
-                        className="w-24 px-2 py-1 bg-slate-50 border border-slate-300 rounded-lg text-right font-mono font-bold text-slate-900 text-xs focus:border-emerald-500 focus:bg-white focus:outline-hidden"
+                        className="w-20 px-2 py-1 bg-slate-50 border border-slate-300 rounded-lg text-right font-mono font-black text-slate-900 text-xs focus:border-emerald-500 focus:bg-white focus:outline-hidden"
+                        title={isUrdu ? 'ریٹ تبدیل کریں' : 'Edit Unit Price'}
                       />
                     </div>
-                    <div className="w-20 text-right font-mono font-bold text-emerald-700 text-xs shrink-0">
+                    <div className="w-20 text-right font-mono font-black text-emerald-700 text-xs shrink-0">
                       Rs. {((Number(item.sale_price) || 0) * item.quantity).toLocaleString()}
                     </div>
                   </div>
                 ))}
               </div>
-            )}
-          </div>
-
-          {/* Payment Mode Selector Tabs */}
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1.5">{t('payment_method_label')}</label>
-            <div className="grid grid-cols-3 gap-2 bg-slate-100 p-1.5 rounded-xl border border-slate-200">
-              <button
-                type="button"
-                onClick={() => {
-                  setCustomerMode('walkin');
-                  setPaymentMethod('cash');
-                  setSelectedCustomerId(null);
-                  setCustomerName('');
-                  setCustomerPhone('');
-                  setPartySearchQuery('');
-                  setTenderedCash('');
-                }}
-                className={`py-2.5 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                  customerMode === 'walkin' && paymentMethod === 'cash'
-                    ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30 font-black'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                }`}
-              >
-                <Banknote className="w-4 h-4" />
-                <span>{t('tab_cash')}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setCustomerMode('party');
-                  setPaymentMethod('cash'); // party invoices can have advance cash
-                  setTenderedCash('');
-                }}
-                className={`py-2.5 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                  customerMode === 'party'
-                    ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30 font-black'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                }`}
-              >
-                <Building2 className="w-4 h-4" />
-                <span>{t('tab_udhar')}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setCustomerMode('walkin');
-                  setPaymentMethod('card');
-                  setSelectedCustomerId(null);
-                  setCustomerName('');
-                  setCustomerPhone('');
-                  setPartySearchQuery('');
-                  setTenderedCash(grandTotal.toString());
-                }}
-                className={`py-2.5 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                  customerMode === 'walkin' && (paymentMethod === 'card' || paymentMethod === 'online')
-                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 font-black'
-                    : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
-                }`}
-              >
-                <CreditCard className="w-4 h-4" />
-                <span>{t('tab_bank')}</span>
-              </button>
             </div>
           </div>
 
-          {/* 1. NAQAD CASH MODE */}
-          {customerMode === 'walkin' && paymentMethod === 'cash' && (
-            <div className="space-y-3 bg-emerald-50/50 p-3.5 rounded-xl border border-emerald-200">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
-                  <Banknote className="w-4 h-4 text-emerald-700" />
-                  <span>{t('cash_tendered_label')}</span>
-                </span>
-                <span className="text-[11px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200">
-                  {isUrdu ? 'کاؤنٹر نقد سیل' : 'Walk-in Retail'}
-                </span>
-              </div>
-
-              {/* Cash Input & Exact Button */}
-              <div className="flex gap-2">
-                <input
-                  type="number"
-                  min="0"
-                  placeholder={isUrdu ? "کتنے روپے وصول ہوئے..." : "Enter received amount..."}
-                  value={tenderedCash}
-                  onChange={(e) => setTenderedCash(e.target.value)}
-                  className="flex-1 px-3 py-2 bg-white border border-emerald-300 rounded-xl text-lg font-mono font-bold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
-                />
+          {/* RIGHT COLUMN: Payment Method, Cash Received, Party/Khata, & Confirm Button */}
+          <div className="lg:col-span-6 space-y-3 flex flex-col justify-between">
+            {/* Payment Mode Selector Tabs */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">{t('payment_method_label')}</label>
+              <div className="grid grid-cols-3 gap-2 bg-slate-100 p-1.5 rounded-xl border border-slate-200">
                 <button
                   type="button"
-                  onClick={() => setTenderedCash(grandTotal.toString())}
-                  className="px-3 py-2 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 rounded-xl text-xs font-bold border border-emerald-300 cursor-pointer"
-                >
-                  {t('exact_cash_btn')}
-                </button>
-              </div>
-
-              {/* Quick Note Buttons */}
-              <div className="grid grid-cols-5 gap-1.5">
-                {[500, 1000, 5000, 10000, 50000].map((amt) => (
-                  <button
-                    key={amt}
-                    type="button"
-                    onClick={() => setTenderedCash(amt.toString())}
-                    className="py-1.5 bg-white hover:bg-emerald-100 text-slate-800 border border-slate-200 rounded-lg text-xs font-bold font-mono transition-colors cursor-pointer"
-                  >
-                    {amt >= 1000 ? `${amt / 1000}k` : amt}
-                  </button>
-                ))}
-              </div>
-
-              {/* Real-time Baqaya Wapis / Change */}
-              <div className="flex items-center justify-between p-2 bg-white rounded-lg border border-emerald-200">
-                <span className="text-xs font-bold text-slate-700">{t('change_due_label')}</span>
-                {changeDue > 0 ? (
-                  <span className="text-base font-black font-mono text-emerald-700">
-                    Rs. {changeDue.toLocaleString()}
-                  </span>
-                ) : (
-                  <span className="text-xs font-bold font-mono text-slate-500">
-                    {tenderedCash && Number(tenderedCash) < grandTotal ? (
-                      <span className="text-amber-700">{t('short_amount_label')} Rs. {(grandTotal - Number(tenderedCash)).toLocaleString()}</span>
-                    ) : (
-                      `Rs. 0 (${t('full_settled_label')})`
-                    )}
-                  </span>
-                )}
-              </div>
-
-              {/* Optional Customer Name & WhatsApp Phone */}
-              <div className="pt-2 border-t border-emerald-200/80">
-                <div className="text-[11px] font-semibold text-slate-600 mb-1">{t('cust_name_optional')}</div>
-                <div className="grid grid-cols-2 gap-2">
-                  <input
-                    type="text"
-                    placeholder={isUrdu ? "گاہک کا نام (اختیاری)" : "Customer Name (Optional)"}
-                    value={customerName}
-                    onChange={(e) => setCustomerName(e.target.value)}
-                    className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-hidden focus:border-emerald-500"
-                  />
-                  <input
-                    type="text"
-                    placeholder={isUrdu ? "موبائل نمبر (0300-1234567)" : "Mobile # (0300-1234567)"}
-                    value={customerPhone}
-                    onChange={(e) => setCustomerPhone(e.target.value)}
-                    className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 placeholder-slate-400 font-mono focus:outline-hidden focus:border-emerald-500"
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* 2. UDHAR INVOICE / KHATA MODE */}
-          {customerMode === 'party' && (
-            <div className="space-y-3 bg-blue-50/60 p-3.5 rounded-xl border border-blue-200">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-blue-950 flex items-center gap-1.5">
-                  <Building2 className="w-4 h-4 text-blue-700" />
-                  <span>{t('wholesale_heading')}</span>
-                </span>
-                <span className="text-[11px] font-bold text-blue-800 bg-blue-100 px-2 py-0.5 rounded border border-blue-200">
-                  {t('credit_sale_badge')}
-                </span>
-              </div>
-
-              {/* Party Autocomplete Search / Select */}
-              <div className="relative">
-                <input
-                  type="text"
-                  placeholder={t('select_party_placeholder')}
-                  value={partySearchQuery}
-                  onChange={(e) => {
-                    setPartySearchQuery(e.target.value);
-                    setIsPartyDropdownOpen(true);
+                  onClick={() => {
+                    setCustomerMode('walkin');
+                    setPaymentMethod('cash');
+                    setSelectedCustomerId(null);
+                    setCustomerName('');
+                    setCustomerPhone('');
+                    setPartySearchQuery('');
+                    setTenderedCash('');
                   }}
-                  onFocus={() => setIsPartyDropdownOpen(true)}
-                  onClick={() => setIsPartyDropdownOpen(true)}
-                  className="w-full px-3 py-2 bg-white border border-blue-300 rounded-xl text-xs font-semibold text-slate-900 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-                />
-                {selectedParty && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedCustomerId(null);
-                      setCustomerName('');
-                      setCustomerPhone('');
-                      setPartySearchQuery('');
-                    }}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold"
-                  >
-                    ✕
-                  </button>
-                )}
+                  className={`py-2 px-2.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    customerMode === 'walkin' && paymentMethod === 'cash'
+                      ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/30 font-black'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                  }`}
+                >
+                  <Banknote className="w-4 h-4" />
+                  <span>{t('tab_cash')}</span>
+                </button>
 
-                {isPartyDropdownOpen && (
-                  <div className="absolute top-full left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-xl z-50 divide-y divide-slate-100">
-                    {partiesList
-                      .filter((c) =>
-                        (c.name || '').toLowerCase().includes(partySearchQuery.toLowerCase()) ||
-                        (c.phone || '').includes(partySearchQuery)
-                      )
-                      .slice(0, 8)
-                      .map((cust) => (
-                        <button
-                          key={cust.id}
-                          type="button"
-                          onClick={() => {
-                            setSelectedCustomerId(cust.id);
-                            setCustomerName(cust.name);
-                            setCustomerPhone(cust.phone || '');
-                            setPartySearchQuery(cust.name);
-                            setIsPartyDropdownOpen(false);
-                          }}
-                          className="w-full px-3 py-2 text-left hover:bg-blue-50 flex items-center justify-between cursor-pointer"
-                        >
-                          <div>
-                            <div className="font-semibold text-xs text-slate-900">{cust.name}</div>
-                            <div className="text-[10px] text-slate-500 font-mono">{cust.phone || 'No phone'}</div>
-                          </div>
-                          <div className="text-right">
-                            <span className={`text-[11px] font-mono font-bold ${cust.current_balance > 0 ? 'text-amber-700' : 'text-slate-500'}`}>
-                              {t('party_khata_label')} Rs. {Number(cust.current_balance || 0).toLocaleString()}
-                            </span>
-                          </div>
-                        </button>
-                      ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Advance Cash Wasool */}
-              <div className="bg-white p-2.5 rounded-xl border border-blue-200 space-y-2">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <div className="text-xs font-bold text-slate-800">{t('cash_paid_now')}</div>
-                    <div className="text-[10px] text-slate-500">{t('cash_paid_sub')}</div>
-                  </div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-bold text-slate-500 font-mono">Rs.</span>
-                    <input
-                      type="number"
-                      min="0"
-                      placeholder={t('poora_udhar')}
-                      value={tenderedCash}
-                      onChange={(e) => setTenderedCash(e.target.value)}
-                      className="w-36 px-2.5 py-1.5 bg-slate-50 border border-slate-300 rounded-lg text-sm font-mono font-bold text-right text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                </div>
-
-                {/* Quick Preset Buttons: 0 (Udhar), 5k, 10k, 20k, 30k, 50k, Half, Full Bill */}
-                <div className="flex flex-wrap items-center gap-1.5 pt-1.5 border-t border-slate-100">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-0.5">{t('quick_select')}</span>
-                  <button
-                    type="button"
-                    onClick={() => setTenderedCash('0')}
-                    className={`px-2 py-1 rounded-md text-[11px] font-bold cursor-pointer transition-colors ${
-                      tenderedCash === '0' || tenderedCash === ''
-                        ? 'bg-blue-600 text-white shadow-xs'
-                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                    }`}
-                  >
-                    {t('poora_udhar')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTenderedCash('5000')}
-                    className={`px-2 py-1 rounded-md text-[11px] font-bold cursor-pointer transition-colors ${
-                      tenderedCash === '5000'
-                        ? 'bg-blue-600 text-white shadow-xs'
-                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                    }`}
-                  >
-                    5k
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTenderedCash('10000')}
-                    className={`px-2 py-1 rounded-md text-[11px] font-bold cursor-pointer transition-colors ${
-                      tenderedCash === '10000'
-                        ? 'bg-blue-600 text-white shadow-xs'
-                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                    }`}
-                  >
-                    10k
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTenderedCash('20000')}
-                    className={`px-2 py-1 rounded-md text-[11px] font-bold cursor-pointer transition-colors ${
-                      tenderedCash === '20000'
-                        ? 'bg-emerald-600 text-white shadow-xs'
-                        : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300'
-                    }`}
-                  >
-                    20k
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTenderedCash('30000')}
-                    className={`px-2 py-1 rounded-md text-[11px] font-bold cursor-pointer transition-colors ${
-                      tenderedCash === '30000'
-                        ? 'bg-emerald-600 text-white shadow-xs'
-                        : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300'
-                    }`}
-                  >
-                    30k
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTenderedCash('50000')}
-                    className={`px-2 py-1 rounded-md text-[11px] font-bold cursor-pointer transition-colors ${
-                      tenderedCash === '50000'
-                        ? 'bg-blue-600 text-white shadow-xs'
-                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                    }`}
-                  >
-                    50k
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTenderedCash(String(Math.round(grandTotal / 2)))}
-                    className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-md text-[11px] font-bold cursor-pointer"
-                  >
-                    {t('half_50')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTenderedCash(String(grandTotal))}
-                    className="px-2 py-1 bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-300 rounded-md text-[11px] font-bold cursor-pointer"
-                  >
-                    {t('full_bill')}
-                  </button>
-                </div>
-              </div>
-
-              {/* Khata Summary Breakdown */}
-              <div className="bg-amber-50/80 p-3 rounded-xl border border-amber-200 space-y-1.5 text-xs">
-                <div className="flex justify-between text-slate-700">
-                  <span>{t('prev_khata_label')}</span>
-                  <span className="font-mono font-bold">
-                    Rs. {Number(selectedParty?.current_balance || 0).toLocaleString()}
-                  </span>
-                </div>
-
-                <div className="flex justify-between text-slate-700">
-                  <span>{t('curr_bill_label')}</span>
-                  <span className="font-mono font-bold">
-                    + Rs. {grandTotal.toLocaleString()}
-                  </span>
-                </div>
-
-                {paidAmount > 0 && (
-                  <div className="flex justify-between text-slate-700">
-                    <span>{t('amount_received')}</span>
-                    <span className="font-mono font-bold text-emerald-700">
-                      - Rs. {paidAmount.toLocaleString()}
-                    </span>
-                  </div>
-                )}
-
-                {paidAmount > grandTotal ? (
-                  <div className="flex justify-between text-emerald-900 bg-emerald-100/90 border border-emerald-300 px-2 py-1 rounded-lg font-bold">
-                    <span>{t('extra_deduction_label')}</span>
-                    <span className="font-mono">
-                      - Rs. {(paidAmount - grandTotal).toLocaleString()}
-                    </span>
-                  </div>
-                ) : (
-                  <div className="flex justify-between text-slate-700">
-                    <span>{t('bill_balance_label')}</span>
-                    <span className="font-mono font-bold text-amber-900">
-                      + Rs. {balanceDue.toLocaleString()}
-                    </span>
-                  </div>
-                )}
-
-                <div className="flex justify-between pt-1.5 border-t border-amber-300 font-bold text-amber-950">
-                  <span>{t('net_new_khata')}</span>
-                  <span className="font-mono text-sm">
-                    Rs. {Math.round(Number(selectedParty?.current_balance || 0) + grandTotal - paidAmount).toLocaleString()}
-                  </span>
-                </div>
-              </div>
-
-              {/* Per-Bill Show Previous Balance Toggle */}
-              <div className="bg-white p-2.5 rounded-xl border border-blue-200 flex items-center justify-between">
-                <div>
-                  <span className="text-xs font-bold text-slate-800">
-                    {isUrdu ? 'بل پرچی پر پچھلا بقایا دکھائیں:' : 'Show previous balance on receipt:'}
-                  </span>
-                  <div className="text-[10px] text-slate-500">
-                    {showPreviousBalance
-                      ? (isUrdu ? 'پرچی اور واٹس ایپ پر پچھلا کھاتہ نظر آئے گا' : 'Previous balance will appear on receipt & WhatsApp')
-                      : (isUrdu ? 'پرچی اور واٹس ایپ سے پچھلا کھاتہ چھپ جائے گا' : 'Previous balance will be hidden from receipt & WhatsApp')}
-                  </div>
-                </div>
-                <label className="flex items-center gap-2 cursor-pointer select-none shrink-0">
-                  <input
-                    type="checkbox"
-                    checked={showPreviousBalance}
-                    onChange={(e) => setShowPreviousBalance(e.target.checked)}
-                    className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
-                  />
-                  <span className={`text-xs font-bold px-2 py-0.5 rounded ${showPreviousBalance ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-600'}`}>
-                    {showPreviousBalance ? (isUrdu ? 'ہاں (دکھائیں)' : 'Yes') : (isUrdu ? 'نہیں (چھپائیں)' : 'No')}
-                  </span>
-                </label>
-              </div>
-            </div>
-          )}
-
-          {/* 3. CARD / ONLINE BANK MODE */}
-          {(paymentMethod === 'card' || paymentMethod === 'online') && customerMode === 'walkin' && (
-            <div className="space-y-3 bg-indigo-50/50 p-3.5 rounded-xl border border-indigo-200">
-              <div className="text-xs font-bold text-indigo-950">{t('card_bank_details')}</div>
-              <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
-                  onClick={() => setPaymentMethod('card')}
-                  className={`py-2 px-3 rounded-lg border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer ${
-                    paymentMethod === 'card'
-                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
-                      : 'bg-white border-slate-200 text-slate-700'
+                  onClick={() => {
+                    setCustomerMode('party');
+                    setPaymentMethod('cash'); // party invoices can have advance cash
+                    setTenderedCash('');
+                  }}
+                  className={`py-2 px-2.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    customerMode === 'party'
+                      ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30 font-black'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                  }`}
+                >
+                  <Building2 className="w-4 h-4" />
+                  <span>{t('tab_udhar')}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomerMode('walkin');
+                    setPaymentMethod('card');
+                    setSelectedCustomerId(null);
+                    setCustomerName('');
+                    setCustomerPhone('');
+                    setPartySearchQuery('');
+                    setTenderedCash(grandTotal.toString());
+                  }}
+                  className={`py-2 px-2.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    customerMode === 'walkin' && (paymentMethod === 'card' || paymentMethod === 'online')
+                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 font-black'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
                   }`}
                 >
                   <CreditCard className="w-4 h-4" />
-                  <span>{t('card_pos_machine')}</span>
+                  <span>{t('tab_bank')}</span>
                 </button>
+              </div>
+            </div>
+
+            {/* 1. NAQAD CASH MODE */}
+            {customerMode === 'walkin' && paymentMethod === 'cash' && (
+              <div className="space-y-2.5 bg-emerald-50/50 p-3 rounded-xl border border-emerald-200">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                    <Banknote className="w-4 h-4 text-emerald-700" />
+                    <span>{t('cash_tendered_label')}</span>
+                  </span>
+                  <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200">
+                    {isUrdu ? 'کاؤنٹر نقد سیل' : 'Walk-in Retail'}
+                  </span>
+                </div>
+
+                {/* Cash Input & Exact Button */}
+                <div className="flex gap-2">
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder={isUrdu ? "کتنے روپے وصول ہوئے..." : "Enter received amount..."}
+                    value={tenderedCash}
+                    onChange={(e) => setTenderedCash(e.target.value)}
+                    className="flex-1 px-3 py-1.5 bg-white border border-emerald-300 rounded-xl text-base font-mono font-bold text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setTenderedCash(grandTotal.toString())}
+                    className="px-3 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 rounded-xl text-xs font-bold border border-emerald-300 cursor-pointer"
+                  >
+                    {t('exact_cash_btn')}
+                  </button>
+                </div>
+
+                {/* Quick Note Buttons */}
+                <div className="grid grid-cols-5 gap-1">
+                  {[500, 1000, 5000, 10000, 50000].map((amt) => (
+                    <button
+                      key={amt}
+                      type="button"
+                      onClick={() => setTenderedCash(amt.toString())}
+                      className="py-1 bg-white hover:bg-emerald-100 text-slate-800 border border-slate-200 rounded-lg text-xs font-bold font-mono transition-colors cursor-pointer"
+                    >
+                      {amt >= 1000 ? `${amt / 1000}k` : amt}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Real-time Baqaya Wapis / Change */}
+                <div className="flex items-center justify-between p-2 bg-white rounded-lg border border-emerald-200">
+                  <span className="text-xs font-bold text-slate-700">{t('change_due_label')}</span>
+                  {changeDue > 0 ? (
+                    <span className="text-base font-black font-mono text-emerald-700">
+                      Rs. {changeDue.toLocaleString()}
+                    </span>
+                  ) : (
+                    <span className="text-xs font-bold font-mono text-slate-500">
+                      {tenderedCash && Number(tenderedCash) < grandTotal ? (
+                        <span className="text-amber-700">{t('short_amount_label')} Rs. {(grandTotal - Number(tenderedCash)).toLocaleString()}</span>
+                      ) : (
+                        `Rs. 0 (${t('full_settled_label')})`
+                      )}
+                    </span>
+                  )}
+                </div>
+
+                {/* Optional Customer Name & WhatsApp Phone */}
+                <div className="pt-2 border-t border-emerald-200/80">
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      placeholder={isUrdu ? "گاہک کا نام (اختیاری)" : "Customer Name (Optional)"}
+                      value={customerName}
+                      onChange={(e) => setCustomerName(e.target.value)}
+                      className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-hidden focus:border-emerald-500"
+                    />
+                    <input
+                      type="text"
+                      placeholder={isUrdu ? "موبائل نمبر (0300-1234567)" : "Mobile # (0300-1234567)"}
+                      value={customerPhone}
+                      onChange={(e) => setCustomerPhone(e.target.value)}
+                      className="px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 placeholder-slate-400 font-mono focus:outline-hidden focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* 2. UDHAR INVOICE / KHATA MODE */}
+            {customerMode === 'party' && (
+              <div className="space-y-2.5 bg-blue-50/60 p-3 rounded-xl border border-blue-200">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-blue-950 flex items-center gap-1.5">
+                    <Building2 className="w-4 h-4 text-blue-700" />
+                    <span>{t('wholesale_heading')}</span>
+                  </span>
+                  <span className="text-[10px] font-bold text-blue-800 bg-blue-100 px-2 py-0.5 rounded border border-blue-200">
+                    {t('credit_sale_badge')}
+                  </span>
+                </div>
+
+                {/* Party Autocomplete Search / Select */}
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder={t('select_party_placeholder')}
+                    value={partySearchQuery}
+                    onChange={(e) => {
+                      setPartySearchQuery(e.target.value);
+                      setIsPartyDropdownOpen(true);
+                    }}
+                    onFocus={() => setIsPartyDropdownOpen(true)}
+                    onClick={() => setIsPartyDropdownOpen(true)}
+                    className="w-full px-3 py-1.5 bg-white border border-blue-300 rounded-xl text-xs font-semibold text-slate-900 placeholder-slate-400 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                  />
+                  {selectedParty && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedCustomerId(null);
+                        setCustomerName('');
+                        setCustomerPhone('');
+                        setPartySearchQuery('');
+                      }}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold"
+                    >
+                      ✕
+                    </button>
+                  )}
+
+                  {isPartyDropdownOpen && (
+                    <div className="absolute top-full left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-xl z-50 divide-y divide-slate-100">
+                      {partiesList
+                        .filter((c) =>
+                          (c.name || '').toLowerCase().includes(partySearchQuery.toLowerCase()) ||
+                          (c.phone || '').includes(partySearchQuery)
+                        )
+                        .slice(0, 8)
+                        .map((cust) => (
+                          <button
+                            key={cust.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedCustomerId(cust.id);
+                              setCustomerName(cust.name);
+                              setCustomerPhone(cust.phone || '');
+                              setPartySearchQuery(cust.name);
+                              setIsPartyDropdownOpen(false);
+                            }}
+                            className="w-full px-3 py-2 text-left hover:bg-blue-50 flex items-center justify-between cursor-pointer"
+                          >
+                            <div>
+                              <div className="font-semibold text-xs text-slate-900">{cust.name}</div>
+                              <div className="text-[10px] text-slate-500 font-mono">{cust.phone || 'No phone'}</div>
+                            </div>
+                            <div className="text-right">
+                              <span className={`text-[11px] font-mono font-bold ${cust.current_balance > 0 ? 'text-amber-700' : 'text-slate-500'}`}>
+                                {t('party_khata_label')} Rs. {Number(cust.current_balance || 0).toLocaleString()}
+                              </span>
+                            </div>
+                          </button>
+                        ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Advance Cash Wasool */}
+                <div className="bg-white p-2 rounded-xl border border-blue-200 space-y-1.5">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="text-xs font-bold text-slate-800">{t('cash_paid_now')}</div>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-bold text-slate-500 font-mono">Rs.</span>
+                      <input
+                        type="number"
+                        min="0"
+                        placeholder={t('poora_udhar')}
+                        value={tenderedCash}
+                        onChange={(e) => setTenderedCash(e.target.value)}
+                        className="w-32 px-2.5 py-1 bg-slate-50 border border-slate-300 rounded-lg text-xs font-mono font-bold text-right text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Quick Preset Buttons */}
+                  <div className="flex flex-wrap items-center gap-1 pt-1 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setTenderedCash('0')}
+                      className={`px-2 py-0.5 rounded-md text-[10px] font-bold cursor-pointer transition-colors ${
+                        tenderedCash === '0' || tenderedCash === ''
+                          ? 'bg-blue-600 text-white shadow-xs'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                      }`}
+                    >
+                      {t('poora_udhar')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTenderedCash('5000')}
+                      className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer"
+                    >
+                      5k
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTenderedCash('10000')}
+                      className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer"
+                    >
+                      10k
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTenderedCash('20000')}
+                      className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 cursor-pointer"
+                    >
+                      20k
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTenderedCash(String(grandTotal))}
+                      className="px-2 py-0.5 bg-purple-50 hover:bg-purple-100 text-purple-900 border border-purple-300 rounded-md text-[10px] font-bold cursor-pointer"
+                    >
+                      {t('full_bill')}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Khata Summary Breakdown */}
+                <div className="bg-amber-50/80 p-2 rounded-xl border border-amber-200 space-y-1 text-xs">
+                  <div className="flex justify-between text-slate-700 text-[11px]">
+                    <span>{t('prev_khata_label')}</span>
+                    <span className="font-mono font-bold">
+                      Rs. {Number(selectedParty?.current_balance || 0).toLocaleString()}
+                    </span>
+                  </div>
+
+                  <div className="flex justify-between text-slate-700 text-[11px]">
+                    <span>{t('curr_bill_label')}</span>
+                    <span className="font-mono font-bold">
+                      + Rs. {grandTotal.toLocaleString()}
+                    </span>
+                  </div>
+
+                  {paidAmount > 0 && (
+                    <div className="flex justify-between text-slate-700 text-[11px]">
+                      <span>{t('amount_received')}</span>
+                      <span className="font-mono font-bold text-emerald-700">
+                        - Rs. {paidAmount.toLocaleString()}
+                      </span>
+                    </div>
+                  )}
+
+                  <div className="flex justify-between pt-1 border-t border-amber-300 font-bold text-amber-950 text-xs">
+                    <span>{t('net_new_khata')}</span>
+                    <span className="font-mono">
+                      Rs. {Math.round(Number(selectedParty?.current_balance || 0) + grandTotal - paidAmount).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Per-Bill Show Previous Balance Toggle */}
+                <div className="bg-white p-2 rounded-xl border border-blue-200 flex items-center justify-between">
+                  <div>
+                    <span className="text-[11px] font-bold text-slate-800">
+                      {isUrdu ? 'بل پرچی پر پچھلا بقایا دکھائیں:' : 'Show previous balance on receipt:'}
+                    </span>
+                  </div>
+                  <label className="flex items-center gap-1.5 cursor-pointer select-none shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={showPreviousBalance}
+                      onChange={(e) => setShowPreviousBalance(e.target.checked)}
+                      className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
+                    />
+                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${showPreviousBalance ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-600'}`}>
+                      {showPreviousBalance ? (isUrdu ? 'دکھائیں' : 'Yes') : (isUrdu ? 'چھپائیں' : 'No')}
+                    </span>
+                  </label>
+                </div>
+              </div>
+            )}
+
+            {/* 3. CARD / ONLINE BANK MODE */}
+            {(paymentMethod === 'card' || paymentMethod === 'online') && customerMode === 'walkin' && (
+              <div className="space-y-2.5 bg-indigo-50/50 p-3 rounded-xl border border-indigo-200">
+                <div className="text-xs font-bold text-indigo-950">{t('card_bank_details')}</div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod('card')}
+                    className={`py-2 px-3 rounded-lg border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer ${
+                      paymentMethod === 'card'
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                        : 'bg-white border-slate-200 text-slate-700'
+                    }`}
+                  >
+                    <CreditCard className="w-4 h-4" />
+                    <span>{t('card_pos_machine')}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod('online')}
+                    className={`py-2 px-3 rounded-lg border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer ${
+                      paymentMethod === 'online'
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                        : 'bg-white border-slate-200 text-slate-700'
+                    }`}
+                  >
+                    <Smartphone className="w-4 h-4" />
+                    <span>{t('online_bank_upi')}</span>
+                  </button>
+                </div>
+
+                <div>
+                  <input
+                    type="text"
+                    placeholder={t('card_ref_placeholder')}
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    className="w-full px-3 py-1.5 bg-white border border-indigo-200 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-hidden focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Error Message inside modal */}
+            {errorMsg && (
+              <div className="p-2 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 font-semibold flex items-center justify-between">
+                <span>{errorMsg}</span>
                 <button
                   type="button"
-                  onClick={() => setPaymentMethod('online')}
-                  className={`py-2 px-3 rounded-lg border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer ${
-                    paymentMethod === 'online'
-                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
-                      : 'bg-white border-slate-200 text-slate-700'
-                  }`}
+                  onClick={() => setErrorMsg('')}
+                  className="text-rose-500 hover:text-rose-800 text-xs font-bold cursor-pointer"
                 >
-                  <Smartphone className="w-4 h-4" />
-                  <span>{t('online_bank_upi')}</span>
+                  ✕
                 </button>
               </div>
-
-              <div>
-                <input
-                  type="text"
-                  placeholder={t('card_ref_placeholder')}
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  className="w-full px-3 py-2 bg-white border border-indigo-200 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-hidden focus:border-indigo-500"
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Error Message inside modal */}
-          {errorMsg && (
-            <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 font-semibold flex items-center justify-between">
-              <span>{errorMsg}</span>
-              <button
-                type="button"
-                onClick={() => setErrorMsg('')}
-                className="text-rose-500 hover:text-rose-800 text-xs font-bold cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-          )}
-
-          {/* Action Buttons at bottom of modal */}
-          <div className="flex items-center space-x-3 pt-3">
-            <button
-              type="button"
-              onClick={() => setIsCheckoutOpen(false)}
-              className="w-36 py-3 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold transition-colors cursor-pointer"
-            >
-              {t('cancel_btn')}
-            </button>
-
-            {customerMode === 'party' ? (
-              <button
-                type="button"
-                onClick={handleProcessSale}
-                disabled={isSubmitting || (!selectedCustomerId && !customerName.trim())}
-                className="flex-1 py-3 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black rounded-xl shadow-lg shadow-blue-600/20 text-xs flex items-center justify-center space-x-2 transition-all cursor-pointer"
-              >
-                <Printer className="w-4 h-4" />
-                <span>{isSubmitting ? t('saving_udhar') : t('save_udhar_invoice')}</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={handleProcessSale}
-                disabled={isSubmitting}
-                className="flex-1 py-3 px-4 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black rounded-xl shadow-lg shadow-emerald-600/20 text-xs flex items-center justify-center space-x-2 transition-all cursor-pointer"
-              >
-                <Printer className="w-4 h-4" />
-                <span>{isSubmitting ? t('saving_sale') : t('complete_cash_sale')}</span>
-              </button>
             )}
+
+            {/* Action Buttons at bottom of modal */}
+            <div className="flex items-center space-x-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsCheckoutOpen(false)}
+                className="w-28 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+              >
+                {t('cancel_btn')}
+              </button>
+
+              {customerMode === 'party' ? (
+                <button
+                  type="button"
+                  onClick={handleProcessSale}
+                  disabled={isSubmitting || (!selectedCustomerId && !customerName.trim())}
+                  className="flex-1 py-2.5 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black rounded-xl shadow-lg shadow-blue-600/20 text-xs flex items-center justify-center space-x-2 transition-all cursor-pointer"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>{isSubmitting ? t('saving_udhar') : t('save_udhar_invoice')}</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleProcessSale}
+                  disabled={isSubmitting}
+                  className="flex-1 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black rounded-xl shadow-lg shadow-emerald-600/20 text-xs flex items-center justify-center space-x-2 transition-all cursor-pointer"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>{isSubmitting ? t('saving_sale') : t('complete_cash_sale')}</span>
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </Modal>

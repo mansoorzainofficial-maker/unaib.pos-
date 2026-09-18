@@ -50,6 +50,8 @@ export default function PurchasesScreen() {
 
   // Selected item row editor state
   const [selectedProductId, setSelectedProductId] = useState('');
+  const [productSearch, setProductSearch] = useState('');
+  const [isProductDropdownOpen, setIsProductDropdownOpen] = useState(false);
   const [itemQty, setItemQty] = useState(1);
   const [itemCost, setItemCost] = useState(0);
   const [itemSalePrice, setItemSalePrice] = useState(0);
@@ -834,7 +836,7 @@ export default function PurchasesScreen() {
             </div>
 
             <div className="grid grid-cols-12 gap-2 text-xs">
-              <div className="col-span-12 md:col-span-3">
+              <div className="col-span-12 md:col-span-3 relative">
                 <div className="flex items-center justify-between mb-1">
                   <label className="block text-[10px] font-semibold text-slate-700">
                     {isUrdu ? 'سامان / پراڈکٹ *' : 'Product *'}
@@ -850,16 +852,80 @@ export default function PurchasesScreen() {
                     {isUrdu ? '+ نیا سامان بنائیں' : '+ Add New'}
                   </button>
                 </div>
-                <select
-                  value={selectedProductId}
-                  onChange={(e) => handleProductSelect(e.target.value)}
-                  className="w-full px-2.5 py-2 bg-white border border-slate-300 rounded-lg text-slate-900 focus:border-amber-500 focus:outline-hidden text-xs font-medium"
-                >
-                  <option value="">{isUrdu ? `-- پراڈکٹ منتخب کریں (${products.length} دستیاب) --` : `-- Choose Product (${products.length} available) --`}</option>
-                  {products.map(p => (
-                    <option key={p.id} value={p.id}>{p.name} ({isUrdu ? 'موجود اسٹاک:' : 'Stock:'} {p.stock_quantity})</option>
-                  ))}
-                </select>
+                {selectedProductId && products.find(p => String(p.id) === String(selectedProductId)) ? (
+                  <div className="flex items-center justify-between gap-1 px-2.5 py-1.5 bg-amber-50 border border-amber-300 rounded-lg text-xs shadow-2xs">
+                    <div className="truncate font-bold text-slate-900">
+                      {products.find(p => String(p.id) === String(selectedProductId))?.name}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedProductId('');
+                        setProductSearch('');
+                        setIsProductDropdownOpen(true);
+                      }}
+                      className="px-1.5 py-0.5 bg-white hover:bg-rose-50 text-slate-400 hover:text-rose-600 border border-slate-200 rounded text-[10px] font-bold cursor-pointer shrink-0"
+                    >
+                      ✕ {isUrdu ? 'بدلیں' : 'Change'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder={isUrdu ? "🔍 نام یا بارکوڈ لکھیں (Enter دبائیں)..." : "🔍 Type product name..."}
+                      value={productSearch}
+                      onFocus={() => setIsProductDropdownOpen(true)}
+                      onChange={(e) => {
+                        setProductSearch(e.target.value);
+                        setIsProductDropdownOpen(true);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          const matches = products.filter(p =>
+                            p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
+                            (p.barcode && p.barcode.includes(productSearch))
+                          );
+                          if (matches.length > 0) {
+                            handleProductSelect(matches[0].id);
+                            setIsProductDropdownOpen(false);
+                            setProductSearch('');
+                          }
+                        } else if (e.key === 'Escape') {
+                          setIsProductDropdownOpen(false);
+                        }
+                      }}
+                      className="w-full px-2.5 py-2 bg-white border-2 border-amber-400 rounded-lg text-slate-900 focus:outline-hidden text-xs font-semibold shadow-2xs"
+                    />
+                    {isProductDropdownOpen && (
+                      <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-50 max-h-52 overflow-y-auto divide-y divide-slate-100">
+                        {products
+                          .filter(p =>
+                            !productSearch.trim() ||
+                            p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
+                            (p.barcode && p.barcode.includes(productSearch))
+                          )
+                          .slice(0, 10)
+                          .map((p) => (
+                            <button
+                              key={p.id}
+                              type="button"
+                              onClick={() => {
+                                handleProductSelect(p.id);
+                                setIsProductDropdownOpen(false);
+                                setProductSearch('');
+                              }}
+                              className="w-full px-3 py-2 text-left hover:bg-amber-50 flex items-center justify-between text-xs cursor-pointer"
+                            >
+                              <div className="truncate font-medium text-slate-900">{p.name}</div>
+                              <span className="text-[10px] text-slate-500 shrink-0 ml-2">اسٹاک: {p.stock_quantity}</span>
+                            </button>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div className="col-span-4 md:col-span-2">
