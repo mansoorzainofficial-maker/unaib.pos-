@@ -83,6 +83,7 @@ export default function CreateGrn({ onNavigateToList }) {
 
     const newItem = {
       product_id: newProd.id,
+      category_id: newProd.category_id || '',
       quantity_ordered: Number(qty) || 1,
       quantity_received: Number(qty) || 1,
       unit_cost: Number(newProd.cost_price || 0)
@@ -205,7 +206,7 @@ export default function CreateGrn({ onNavigateToList }) {
   };
 
   return (
-    <div className="p-4 space-y-4 max-w-7xl mx-auto">
+    <div className="flex-1 w-full h-full overflow-y-auto p-4 space-y-4 max-w-7xl mx-auto">
       {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
         <div className="flex items-center space-x-3">
@@ -219,26 +220,6 @@ export default function CreateGrn({ onNavigateToList }) {
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Top Quick Save GRN Button */}
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={isSubmitting || items.every(it => !it.product_id)}
-            className="flex items-center space-x-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 text-white font-bold rounded-xl text-xs shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
-          >
-            {isSubmitting ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>{t('grn_saving_btn')}</span>
-              </>
-            ) : (
-              <>
-                <CheckCircle2 className="w-4 h-4" />
-                <span>{t('grn_submit_btn')}</span>
-              </>
-            )}
-          </button>
-
           {onNavigateToList && (
             <button
               type="button"
@@ -402,23 +383,11 @@ export default function CreateGrn({ onNavigateToList }) {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => {
-                  setTargetRowIndex(null);
-                  setIsAddProductOpen(true);
-                }}
-                className="flex items-center space-x-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs shadow-xs transition-colors cursor-pointer"
-                title={t('grn_quick_add_product')}
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>{t('grn_quick_add_product')}</span>
-              </button>
-              <button
-                type="button"
                 onClick={handleAddItemRow}
-                className="flex items-center space-x-1 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-lg text-xs shadow-xs transition-colors cursor-pointer"
+                className="flex items-center space-x-1.5 px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-xl text-xs shadow-xs transition-colors cursor-pointer"
               >
-                <Plus className="w-3.5 h-3.5" />
-                <span>{t('grn_add_item_btn')}</span>
+                <Plus className="w-4 h-4" />
+                <span>{isUrdu ? '+ نئی قطار شامل کریں' : '+ Add Row to GRN'}</span>
               </button>
             </div>
           </div>

@@ -83,41 +83,28 @@ export default function GrnItemRow({
 
       {/* 3. Product Dropdown */}
       <td className="py-2.5 px-3 min-w-[260px]">
-        <div className="flex items-center gap-1.5">
-          <select
-            value={item.product_id || ''}
-            onChange={(e) => handleProductChange(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                e.preventDefault();
-                e.stopPropagation();
-              }
-            }}
-            required
-            className="flex-1 px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-900 font-semibold focus:border-amber-500 focus:ring-1 focus:ring-amber-500 focus:outline-hidden text-xs"
-          >
-            <option value="">{t('grn_select_product_option')}</option>
-            {filteredProducts.map(p => (
-              <option key={p.id} value={p.id}>
-                {p.name} ({t('grn_current_stock')} {p.stock_quantity})
-              </option>
-            ))}
-          </select>
-          {onOpenAddProduct && (
-            <button
-              type="button"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                onOpenAddProduct(index);
-              }}
-              title={t('grn_quick_add_product')}
-              className="p-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-lg shrink-0 shadow-xs transition-colors cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
-          )}
-        </div>
+        <select
+          value={item.product_id || ''}
+          onChange={(e) => handleProductChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              e.stopPropagation();
+            }
+          }}
+          required
+          className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-slate-900 font-semibold focus:border-amber-500 focus:ring-1 focus:ring-amber-500 focus:outline-hidden text-xs"
+        >
+          <option value="">{t('grn_select_product_option')}</option>
+          <option value="__new__" className="font-bold text-amber-700 bg-amber-50">
+            {t('grn_select_or_add_prod') || (isUrdu ? '➕ + نیا پراڈکٹ رجسٹر کریں...' : '➕ + Register New Product...')}
+          </option>
+          {filteredProducts.map(p => (
+            <option key={p.id} value={p.id}>
+              {p.name} ({t('grn_current_stock')} {p.stock_quantity})
+            </option>
+          ))}
+        </select>
       </td>
 
       {/* 4. Quantity Received */}
