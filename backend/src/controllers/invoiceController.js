@@ -370,7 +370,7 @@ async function createInvoice(req, res) {
             ledgerDesc += ` (Incl. Shipping: Rs. ${shippingCost.toLocaleString()}${shippingNotes ? ` - ${shippingNotes}` : ''})`;
           }
           if (extraCharges > 0) {
-            ledgerDesc += ` (Incl. Extra Charges: Rs. ${extraCharges.toLocaleString()})`;
+            ledgerDesc += ` (Deal: Rs. ${grandTotal.toLocaleString()})`;
           }
           if (balanceDue > 0) {
             ledgerDesc += ` (Udhar: Rs. ${balanceDue.toLocaleString()})`;
