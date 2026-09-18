@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import { X, Package, CheckCircle2, AlertCircle, Loader2, Barcode, ShieldCheck, Tag, Zap, Plus } from 'lucide-react';
+import { X, Package, CheckCircle2, AlertCircle, Loader2, Barcode, ShieldCheck, Tag, Plus } from 'lucide-react';
 import { api } from '../services/api';
-import { grnApi } from '../services/grnApi';
 import { useLanguage } from '../context/LanguageContext';
 
 export default function QuickProductModal({
@@ -66,88 +65,7 @@ export default function QuickProductModal({
     return true;
   };
 
-  /**
-   * Option 1: Direct 1-Click Save (Creates Product + Creates GRN + Updates Stock Immediately)
-   */
-  const handleDirectGrnAndStock = async () => {
-    setErrorMsg('');
-    if (!validateCommon()) return;
 
-    if (!supplierId) {
-      setErrorMsg(isUrdu ? 'براہِ کرم پہلے سپلائر منتخب کریں۔' : 'Please select a supplier first.');
-      return;
-    }
-
-    setSaving(true);
-    try {
-      const numQty = Number(quantity) || 1;
-      const numCost = Number(costPrice) || 0;
-      const numSale = Number(salePrice) || 0;
-
-      // 1. Create product in DB
-      const prodPayload = {
-        name: name.trim(),
-        category_id: categoryId ? Number(categoryId) : null,
-        cost_price: numCost,
-        sale_price: numSale,
-        stock_quantity: 0, // Stock will be credited via GRN below
-        low_stock_threshold: 5,
-        supplier_id: Number(supplierId),
-        barcode: barcode.trim() || null,
-        has_serials: hasSerials ? 1 : 0,
-        warranty_months: Number(warrantyMonths) || 12,
-        description: null
-      };
-
-      const pRes = await api.products.create(prodPayload);
-      const newProductId = pRes?.productId || pRes?.product?.id;
-      if (!newProductId) {
-        throw new Error(pRes?.message || 'Failed to create product');
-      }
-
-      // 2. Immediately create GRN to update stock & ledger
-      const grnPayload = {
-        supplier_id: Number(supplierId),
-        payment_type: paymentType || 'credit',
-        received_date: new Date().toISOString().split('T')[0],
-        notes: `Quick GRN for new product: ${name.trim()}`,
-        items: [{
-          product_id: Number(newProductId),
-          quantity_ordered: numQty,
-          quantity_received: numQty,
-          unit_cost: numCost
-        }]
-      };
-
-      const grnRes = await grnApi.create(grnPayload);
-      if (!grnRes.success) {
-        throw new Error(grnRes.error || 'Failed to record GRN');
-      }
-
-      const createdProduct = {
-        id: newProductId,
-        name: name.trim(),
-        cost_price: numCost,
-        sale_price: numSale,
-        stock_quantity: numQty,
-        category_id: categoryId ? Number(categoryId) : null,
-        barcode: barcode.trim() || null,
-        has_serials: hasSerials ? 1 : 0
-      };
-
-      onSuccess(createdProduct, true, numQty, grnRes.grn);
-      handleClose();
-    } catch (err) {
-      console.error('Direct GRN create error:', err);
-      let msg = err.message || (isUrdu ? 'پراڈکٹ اور GRN بنانے میں خرابی ہوئی' : 'Failed to create product and GRN');
-      if (msg.includes('already exists')) {
-        msg = isUrdu ? 'اس بارکوڈ یا نام سے پراڈکٹ پہلے سے موجود ہے۔' : 'A product with this barcode already exists.';
-      }
-      setErrorMsg(msg);
-    } finally {
-      setSaving(false);
-    }
-  };
 
   /**
    * Option 2: Add to GRN Table (For multi-item GRNs)
@@ -422,38 +340,24 @@ export default function QuickProductModal({
               {t('cancel', 'منسوخ')}
             </button>
 
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-              <button
-                type="button"
-                onClick={handleSubmitToList}
-                disabled={saving}
-                className="px-4 py-2 text-xs font-bold text-slate-800 bg-amber-100 hover:bg-amber-200 border border-amber-300 rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1"
-                title="Add to GRN table to combine with other items"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>{isUrdu ? '+ صرف لسٹ میں شامل کریں' : '+ Add to GRN List'}</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={handleDirectGrnAndStock}
-                disabled={saving}
-                className="px-5 py-2 text-xs font-black text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-md shadow-emerald-600/25 transition-all cursor-pointer flex items-center justify-center gap-1.5"
-                title="Create product, record GRN and update stock in 1 click"
-              >
-                {saving ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>{isUrdu ? 'محفوظ ہو رہا ہے...' : 'Saving...'}</span>
-                  </>
-                ) : (
-                  <>
-                    <Zap className="w-3.5 h-3.5 text-amber-300 fill-amber-300" />
-                    <span>{isUrdu ? '✓ فوری GRN اور اسٹاک محفوظ کریں' : '✓ Save GRN & Stock Now'}</span>
-                  </>
-                )}
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={handleSubmitToList}
+              disabled={saving}
+              className="px-5 py-2.5 text-xs font-black text-slate-950 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 rounded-xl shadow-md shadow-amber-500/20 transition-all cursor-pointer flex items-center justify-center gap-1.5"
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>{isUrdu ? 'محفوظ ہو رہا ہے...' : 'Saving...'}</span>
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>{isUrdu ? '✓ پراڈکٹ محفوظ کریں' : '✓ Save Product'}</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
       </div>

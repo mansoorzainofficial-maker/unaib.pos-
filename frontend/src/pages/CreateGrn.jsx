@@ -56,25 +56,11 @@ export default function CreateGrn({ onNavigateToList }) {
     }
   };
 
-  const handleProductCreated = (newProd, directGrnCompleted = false, qty = 1, grnData = null) => {
+  const handleProductCreated = (newProd, _, qty = 1) => {
     // 1. Refresh products list
     setProducts(prev => [newProd, ...prev.filter(p => p.id !== newProd.id)]);
 
-    if (directGrnCompleted) {
-      // 1-Click Save completed
-      setSuccessMsg(isUrdu
-        ? `✓ رسید #${grnData?.grn_number || 'GRN'} کامیابی سے محفوظ ہو گئی! پراڈکٹ "${newProd.name}" کا ${qty} عدد اسٹاک فوری طور پر شامل ہو گیا ہے۔`
-        : `✓ GRN #${grnData?.grn_number || 'GRN'} saved! ${qty} units added to stock for "${newProd.name}".`
-      );
-      // Reset rows to clean state
-      setItems([{ product_id: '', quantity_ordered: 1, quantity_received: 1, unit_cost: 0 }]);
-      setNotes('');
-      loadMeta();
-      setIsAddProductOpen(false);
-      return;
-    }
-
-    // 2. Added to GRN table
+    // 2. Select into GRN row
     let targetIdx = targetRowIndex;
     if (targetIdx === null || targetIdx < 0 || targetIdx >= items.length) {
       const emptyIdx = items.findIndex(it => !it.product_id);
@@ -96,14 +82,13 @@ export default function CreateGrn({ onNavigateToList }) {
       } else {
         next.push(newItem);
       }
-      // Remove any other completely blank rows so validation never gets blocked
       const valid = next.filter(it => it.product_id);
       return valid.length > 0 ? valid : [{ product_id: '', category_id: '', quantity_ordered: 1, quantity_received: 1, unit_cost: 0 }];
     });
 
     setSuccessMsg(isUrdu
-      ? `پراڈکٹ "${newProd.name}" (${qty} عدد) GRN لسٹ میں شامل ہو گیا۔ اسٹاک گودام میں درج کرنے کے لیے "رسید محفوظ کریں" کا بٹن دبائیں۔`
-      : `Product "${newProd.name}" (${qty} units) added to GRN. Click "Save GRN" to commit stock.`
+      ? `پراڈکٹ "${newProd.name}" (${qty} عدد) GRN لسٹ میں منتخب ہو گیا۔ اسٹاک گودام میں درج کرنے کے لیے نیچے دیے گئے "رسید محفوظ کریں" کا بٹن دبائیں۔`
+      : `Product "${newProd.name}" (${qty} units) selected. Click "Save GRN" below to commit stock.`
     );
     setTimeout(() => setSuccessMsg(''), 5000);
     setIsAddProductOpen(false);
@@ -249,23 +234,13 @@ export default function CreateGrn({ onNavigateToList }) {
 
       {/* Unsaved Items Notice */}
       {items.some(it => it.product_id) && !successMsg && (
-        <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-amber-950 text-xs font-bold flex items-center justify-between animate-in fade-in">
-          <div className="flex items-center gap-2">
-            <span className="text-base">⚠️</span>
-            <span>
-              {isUrdu
-                ? 'نوٹ: درج کردہ سامان ابھی صرف عارضی لسٹ میں ہے۔ اسٹاک اور انوائس میں شامل کرنے کے لیے "رسید محفوظ کریں" کا بٹن ضرور دبائیں!'
-                : 'Notice: Items listed below are not yet saved. Click "Save GRN" to add them to stock and invoices!'}
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={handleSubmit}
-            disabled={isSubmitting}
-            className="px-3 py-1 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-lg text-xs transition-colors cursor-pointer shrink-0"
-          >
-            {isUrdu ? 'ابھی محفوظ کریں' : 'Save Now'}
-          </button>
+        <div className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-amber-950 text-xs font-bold flex items-center gap-2 animate-in fade-in">
+          <span className="text-base">⚠️</span>
+          <span>
+            {isUrdu
+              ? 'نوٹ: درج کردہ سامان ابھی عارضی لسٹ میں ہے۔ اسٹاک اور کھاتہ اپڈیٹ کرنے کے لیے نیچے دیے گئے "رسید محفوظ کریں" کے بٹن پر کلک فرمائیں۔'
+              : 'Notice: Items listed below are temporary. Click "Save GRN" at the bottom to finalize stock and ledger!'}
+          </span>
         </div>
       )}
 
