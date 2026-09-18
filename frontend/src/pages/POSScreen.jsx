@@ -114,6 +114,10 @@ export default function POSScreen({ onLowStockChange }) {
   const [fastSearch, setFastSearch] = useState('');
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastAddedId, setLastAddedId] = useState(null);
+  const [cartToast, setCartToast] = useState(null);
+  const [showCheckoutItems, setShowCheckoutItems] = useState(false);
+  const cartContainerRef = useRef(null);
 
   // Load products & categories on mount + on window focus
   useEffect(() => {
@@ -248,7 +252,7 @@ export default function POSScreen({ onLowStockChange }) {
     return serials.slice(0, targetQty);
   };
 
-  // Add product to cart (100% Automatic serial assignment without blocking modal)
+  // Add product to cart (Always appears at the very top of cart with green flash & toast for instant visibility)
   const addToCart = (product) => {
     setErrorMsg('');
     const existingIndex = cart.findIndex(item => item.product_id === product.id);
@@ -260,13 +264,16 @@ export default function POSScreen({ onLowStockChange }) {
         return;
       }
 
-      const updated = [...cart];
+      const targetItem = { ...cart[existingIndex] };
       const newQty = currentQty + 1;
-      updated[existingIndex].quantity = newQty;
+      targetItem.quantity = newQty;
       if (product.has_serials) {
-        updated[existingIndex].serial_numbers = getAutoSerials(product, newQty, updated[existingIndex].serial_numbers);
+        targetItem.serial_numbers = getAutoSerials(product, newQty, targetItem.serial_numbers);
       }
-      setCart(updated);
+      const otherItems = cart.filter((_, idx) => idx !== existingIndex);
+      setCart([targetItem, ...otherItems]);
+      setLastAddedId(product.id);
+      setCartToast({ name: product.name, qty: newQty });
     } else {
       if (product.stock_quantity < 1) {
         setErrorMsg(`"${product.name}" is out of stock!`);
@@ -288,8 +295,16 @@ export default function POSScreen({ onLowStockChange }) {
         availableSerials: product.availableSerials || []
       };
 
-      setCart([...cart, newItem]);
+      setCart([newItem, ...cart]);
+      setLastAddedId(product.id);
+      setCartToast({ name: product.name, qty: 1 });
     }
+
+    if (cartContainerRef.current) {
+      cartContainerRef.current.scrollTop = 0;
+    }
+    setTimeout(() => setLastAddedId(null), 1800);
+    setTimeout(() => setCartToast(null), 2500);
   };
 
   // Optional manual serial edit modal (only if user explicitly clicks Edit)
@@ -742,6 +757,19 @@ export default function POSScreen({ onLowStockChange }) {
           </div>
         )}
 
+        {/* Instant Add-to-Cart Confirmation Toast */}
+        {cartToast && (
+          <div className="mx-3 mt-2 px-3 py-1.5 bg-emerald-600 text-white rounded-xl text-xs font-bold flex items-center justify-between shadow-md shadow-emerald-600/20 animate-fade-in">
+            <span className="flex items-center gap-1.5">
+              <span>✓</span>
+              <span>{isUrdu ? `"${cartToast.name}" کارٹ میں شامل ہو گیا!` : `"${cartToast.name}" added to cart!`}</span>
+            </span>
+            <span className="bg-emerald-800 px-2 py-0.5 rounded text-[11px] font-mono">
+              {isUrdu ? `تعداد: ${cartToast.qty}` : `Qty: ${cartToast.qty}`}
+            </span>
+          </div>
+        )}
+
         {/* Cart Line Items Header Strip with Clear Cart */}
         <div className="flex items-center justify-between px-3 py-1.5 bg-slate-50 border-b border-slate-200 text-xs">
           <div className="font-bold text-slate-700 flex items-center gap-2">
@@ -770,7 +798,7 @@ export default function POSScreen({ onLowStockChange }) {
         </div>
 
         {/* Cart Line Items Table */}
-        <div className="flex-1 overflow-y-auto p-3">
+        <div ref={cartContainerRef} className="flex-1 overflow-y-auto p-3">
           {cart.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-2">
               <Package className="w-12 h-12 text-slate-300" />
@@ -790,7 +818,14 @@ export default function POSScreen({ onLowStockChange }) {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {cart.map((item) => (
-                  <tr key={item.product_id} className="hover:bg-slate-50 transition-colors">
+                  <tr
+                    key={item.product_id}
+                    className={`transition-all duration-500 ${
+                      lastAddedId === item.product_id
+                        ? 'bg-emerald-100/90 ring-2 ring-emerald-400 font-bold'
+                        : 'hover:bg-slate-50'
+                    }`}
+                  >
                     <td className="py-2.5 pl-3">
                       <div className="font-bold text-slate-900">{item.name}</div>
                       <div className="text-[10px] text-slate-500 flex items-center gap-2">
@@ -998,6 +1033,135 @@ export default function POSScreen({ onLowStockChange }) {
                 {cart.reduce((s, i) => s + i.quantity, 0)} {isUrdu ? 'سامان' : 'Items'}
               </span>
             </div>
+          </div>
+
+          {/* Direct Final Deal Amount & Item Rates Controller inside Checkout Window */}
+          <div className="bg-emerald-50/90 p-3 rounded-2xl border border-emerald-200 space-y-2.5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="text-xs font-bold text-emerald-950 flex items-center gap-1.5">
+                  <span className="text-base">🏷️</span>
+                  <span>{isUrdu ? 'فائنل بل رقم (طے شدہ ریٹ):' : 'Final Bill / Deal Amount:'}</span>
+                </div>
+                <div className="text-[10.5px] text-emerald-700">
+                  {discountAmount > 0
+                    ? (isUrdu ? `اصل سب ٹوٹل: Rs. ${subtotal.toLocaleString()} | رعایت: Rs. ${discountAmount.toLocaleString()}` : `Subtotal: Rs. ${subtotal.toLocaleString()} | Discount: Rs. ${discountAmount.toLocaleString()}`)
+                    : (isUrdu ? 'بل راؤنڈ کرنے یا گاہک کو رعایت دینے کے لیے یہاں رقم لکھیں' : 'Change total to apply custom deal discount')}
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="text-xs font-bold text-emerald-800 font-mono">Rs.</span>
+                <input
+                  type="number"
+                  min="0"
+                  value={grandTotal}
+                  onChange={(e) => {
+                    const enteredVal = e.target.value;
+                    if (enteredVal === '') {
+                      setDiscountType('amount');
+                      setDiscountValue(0);
+                      return;
+                    }
+                    const newTotal = Number(enteredVal);
+                    if (!isNaN(newTotal) && newTotal >= 0) {
+                      const diff = Math.max(0, subtotal - newTotal);
+                      setDiscountType('amount');
+                      setDiscountValue(diff);
+                    }
+                  }}
+                  className="w-32 px-3 py-1.5 bg-white border-2 border-emerald-500 rounded-xl text-sm font-mono font-black text-right text-emerald-950 focus:outline-hidden focus:ring-2 focus:ring-emerald-400 shadow-xs"
+                  title={isUrdu ? 'فائنل بل رقم تبدیل کریں' : 'Edit final deal amount'}
+                />
+              </div>
+            </div>
+
+            {/* Quick Rounding Presets and Toggle for Line Items */}
+            <div className="flex flex-wrap items-center justify-between pt-1.5 border-t border-emerald-200 text-[11px] gap-1.5">
+              <div className="flex items-center gap-1">
+                <span className="font-bold text-emerald-900 mr-1">{isUrdu ? 'راؤنڈ آف:' : 'Round:'}</span>
+                {subtotal % 100 !== 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const rounded = Math.floor(subtotal / 100) * 100;
+                      setDiscountType('amount');
+                      setDiscountValue(subtotal - rounded);
+                    }}
+                    className="px-2 py-0.5 bg-white hover:bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-md font-mono font-bold cursor-pointer transition-colors"
+                  >
+                    Rs. {Math.floor(subtotal / 100) * 100}
+                  </button>
+                )}
+                {subtotal % 500 !== 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const rounded = Math.floor(subtotal / 500) * 500;
+                      setDiscountType('amount');
+                      setDiscountValue(subtotal - rounded);
+                    }}
+                    className="px-2 py-0.5 bg-white hover:bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-md font-mono font-bold cursor-pointer transition-colors"
+                  >
+                    Rs. {Math.floor(subtotal / 500) * 500}
+                  </button>
+                )}
+                {discountAmount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDiscountType('amount');
+                      setDiscountValue(0);
+                    }}
+                    className="px-2 py-0.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-md font-bold cursor-pointer transition-colors"
+                  >
+                    {isUrdu ? 'رعایت ختم (Reset)' : 'Reset'}
+                  </button>
+                )}
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowCheckoutItems(!showCheckoutItems)}
+                className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-md font-bold cursor-pointer transition-colors flex items-center gap-1"
+              >
+                <span>{showCheckoutItems ? '▲' : '▼'}</span>
+                <span>{showCheckoutItems ? (isUrdu ? 'سامان لسٹ چھپائیں' : 'Hide Items') : (isUrdu ? 'سامان کے ریٹ بدلیں' : 'Edit Item Rates')}</span>
+              </button>
+            </div>
+
+            {/* Collapsible Line Items Rate Editor inside Checkout Modal */}
+            {showCheckoutItems && (
+              <div className="mt-2 pt-2 border-t border-emerald-200 max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                <div className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">
+                  {isUrdu ? 'ہر سامان کا ریٹ ونڈو کے اندر ہی تبدیل کریں:' : 'Edit line rates directly inside checkout window:'}
+                </div>
+                {cart.map((item) => (
+                  <div key={item.product_id} className="bg-white p-2 rounded-xl border border-slate-200 flex items-center justify-between text-xs gap-2 shadow-2xs">
+                    <div className="flex-1 min-w-0">
+                      <div className="font-semibold text-slate-900 truncate">{item.name}</div>
+                      <div className="text-[10px] text-slate-500 font-mono">
+                        Qty: {item.quantity} {item.cost_price > 0 && Number(item.sale_price) < Number(item.cost_price) && (
+                          <span className="text-amber-700 font-bold ml-1">⚠️ Cost: Rs. {item.cost_price}</span>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <span className="text-[10px] text-slate-400 font-bold">Rs.</span>
+                      <input
+                        type="number"
+                        min="0"
+                        value={item.sale_price}
+                        onChange={(e) => handlePriceChange(item.product_id, e.target.value)}
+                        className="w-24 px-2 py-1 bg-slate-50 border border-slate-300 rounded-lg text-right font-mono font-bold text-slate-900 text-xs focus:border-emerald-500 focus:bg-white focus:outline-hidden"
+                      />
+                    </div>
+                    <div className="w-20 text-right font-mono font-bold text-emerald-700 text-xs shrink-0">
+                      Rs. {((Number(item.sale_price) || 0) * item.quantity).toLocaleString()}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Payment Mode Selector Tabs */}
