@@ -194,6 +194,10 @@ export default function ThermalReceipt({ invoice, onClose }) {
         msg += `🚚 کرایہ / کوریئر (Shipping): +${currency} ${Number(invoice.shipping_cost).toLocaleString()}${invoice.shipping_notes ? ` (${invoice.shipping_notes})` : ''}\n`;
       }
 
+      if (Number(invoice.extra_charges || 0) > 0) {
+        msg += `➕ اضافی رقم / سرچارج (Extra): +${currency} ${Number(invoice.extra_charges).toLocaleString()}\n`;
+      }
+
       msg += `*کل بل رقم (Grand Total):* *${currency} ${Number(invoice.grand_total || 0).toLocaleString()}*\n`;
       msg += `*وصول شدہ رقم:* ${currency} ${Number(invoice.paid_amount || 0).toLocaleString()}\n`;
 
@@ -280,6 +284,10 @@ export default function ThermalReceipt({ invoice, onClose }) {
 
     if (Number(invoice.shipping_cost || 0) > 0) {
       msg += `🚚 Shipping / Courier: +${currency} ${Number(invoice.shipping_cost).toLocaleString()}${invoice.shipping_notes ? ` (${invoice.shipping_notes})` : ''}\n`;
+    }
+
+    if (Number(invoice.extra_charges || 0) > 0) {
+      msg += `➕ Extra / Surcharge: +${currency} ${Number(invoice.extra_charges).toLocaleString()}\n`;
     }
 
     msg += `*TOTAL AMOUNT:* *${currency} ${Number(invoice.grand_total || 0).toLocaleString()}*\n`;
@@ -696,6 +704,13 @@ export default function ThermalReceipt({ invoice, onClose }) {
             <div className="flex justify-between text-gray-800">
               <span>{isUrduReceipt ? '🚚 کرایہ / کوریئر / ٹرانسپورٹ:' : '🚚 Shipping / Courier:'} {invoice.shipping_notes ? `(${invoice.shipping_notes})` : ''}</span>
               <span className="font-mono font-semibold">+ {currency} {Number(invoice.shipping_cost).toLocaleString()}</span>
+            </div>
+          )}
+
+          {Number(invoice.extra_charges || 0) > 0 && (
+            <div className="flex justify-between text-gray-800">
+              <span>{isUrduReceipt ? '➕ اضافی رقم / سرچارج:' : '➕ Extra / Surcharge:'}</span>
+              <span className="font-mono font-semibold text-amber-700">+ {currency} {Number(invoice.extra_charges).toLocaleString()}</span>
             </div>
           )}
 

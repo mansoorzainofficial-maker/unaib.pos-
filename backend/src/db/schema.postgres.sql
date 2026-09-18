@@ -93,6 +93,7 @@ CREATE TABLE IF NOT EXISTS invoices (
     show_previous_balance INTEGER DEFAULT 1,
     shipping_cost NUMERIC(12, 2) DEFAULT 0.0,
     shipping_notes TEXT,
+    extra_charges NUMERIC(12, 2) DEFAULT 0.0,
     notes TEXT,
     void_reason TEXT,
     voided_at TIMESTAMPTZ,

@@ -43,6 +43,7 @@ async function createInvoice(req, res) {
       tax_rate,
       shipping_cost,
       shipping_notes,
+      extra_charges,
       payment_method, // 'cash', 'card', 'online', 'split'
       paid_amount,
       notes,
@@ -187,7 +188,8 @@ async function createInvoice(req, res) {
       const taxAmount = Math.round(((taxableAmount * tRate) / 100) * 100) / 100;
       const shippingCost = Math.max(0, Number(shipping_cost) || 0);
       const shippingNotes = (shipping_notes && typeof shipping_notes === 'string') ? shipping_notes.trim() : null;
-      const grandTotal = Math.round((taxableAmount + taxAmount + shippingCost) * 100) / 100;
+      const extraCharges = Math.max(0, Number(extra_charges) || 0);
+      const grandTotal = Math.round((taxableAmount + taxAmount + shippingCost + extraCharges) * 100) / 100;
 
       const paid = (paid_amount !== undefined && paid_amount !== null && paid_amount !== '')
         ? Math.round(Number(paid_amount) * 100) / 100
@@ -258,10 +260,10 @@ async function createInvoice(req, res) {
           invoice_number, customer_id, customer_name, customer_phone,
           cashier_id, subtotal, discount_type, discount_value,
           discount_amount, tax_rate, tax_amount, grand_total,
-          shipping_cost, shipping_notes,
+          shipping_cost, shipping_notes, extra_charges,
           paid_amount, change_amount, balance_due, payment_method, notes,
           previous_customer_balance, new_customer_balance, show_previous_balance
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         invoiceNumber,
         customerId,
@@ -277,6 +279,7 @@ async function createInvoice(req, res) {
         grandTotal,
         shippingCost,
         shippingNotes,
+        extraCharges,
         paid,
         changeAmount,
         balanceDue,
@@ -365,6 +368,9 @@ async function createInvoice(req, res) {
           let ledgerDesc = `Sale Invoice #${invoiceNumber}`;
           if (shippingCost > 0) {
             ledgerDesc += ` (Incl. Shipping: Rs. ${shippingCost.toLocaleString()}${shippingNotes ? ` - ${shippingNotes}` : ''})`;
+          }
+          if (extraCharges > 0) {
+            ledgerDesc += ` (Incl. Extra Charges: Rs. ${extraCharges.toLocaleString()})`;
           }
           if (balanceDue > 0) {
             ledgerDesc += ` (Udhar: Rs. ${balanceDue.toLocaleString()})`;

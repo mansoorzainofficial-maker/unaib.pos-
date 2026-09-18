@@ -101,6 +101,12 @@ export default function POSScreen({ onLowStockChange }) {
       return saved.shippingNotes || '';
     } catch (_) { return ''; }
   });
+  const [extraCharges, setExtraCharges] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(DRAFT_STORAGE_KEY) || '{}');
+      return saved.extraCharges || 0;
+    } catch (_) { return 0; }
+  });
   const [paymentMethod, setPaymentMethod] = useState('cash'); // 'cash', 'card', 'online'
   const [tenderedCash, setTenderedCash] = useState('');
   const [notes, setNotes] = useState('');
@@ -197,6 +203,7 @@ export default function POSScreen({ onLowStockChange }) {
           discountValue,
           shippingCost,
           shippingNotes,
+          extraCharges,
           savedAt: new Date().toISOString()
         };
         localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
@@ -206,7 +213,7 @@ export default function POSScreen({ onLowStockChange }) {
     } catch (e) {
       console.warn('Could not auto-save draft bill to localStorage:', e);
     }
-  }, [cart, customerMode, customerName, customerPhone, selectedCustomerId, discountValue, shippingCost, shippingNotes]);
+  }, [cart, customerMode, customerName, customerPhone, selectedCustomerId, discountValue, shippingCost, shippingNotes, extraCharges]);
 
   // Barcode / Manual Input Handler (Scanner or Manual Typing)
   const handleBarcodeScan = async (barcode) => {
@@ -414,6 +421,7 @@ export default function POSScreen({ onLowStockChange }) {
     setTaxRate(defaultTaxRate);
     setShippingCost(0);
     setShippingNotes('');
+    setExtraCharges(0);
     setTenderedCash('');
     setNotes('');
     setErrorMsg('');
@@ -437,7 +445,8 @@ export default function POSScreen({ onLowStockChange }) {
   const taxableAmount = subtotal - discountAmount;
   const taxAmount = (taxableAmount * (Number(taxRate) || 0)) / 100;
   const shippingNum = Math.max(0, Number(shippingCost) || 0);
-  const grandTotal = Math.round((taxableAmount + taxAmount + shippingNum) * 100) / 100;
+  const extraNum = Math.max(0, Number(extraCharges) || 0);
+  const grandTotal = Math.round((taxableAmount + taxAmount + shippingNum + extraNum) * 100) / 100;
 
   // In Cash mode, paidAmount defaults to grandTotal; In Udhar mode, defaults to 0 (full Udhar)
   const paidAmount = customerMode === 'walkin'
@@ -560,6 +569,7 @@ export default function POSScreen({ onLowStockChange }) {
         tax_amount: taxAmount,
         shipping_cost: shippingNum,
         shipping_notes: shippingNotes.trim() || null,
+        extra_charges: extraNum,
         grand_total: grandTotal,
         paid_amount: paidAmount,
         change_amount: changeDue,
@@ -620,6 +630,7 @@ export default function POSScreen({ onLowStockChange }) {
         tax_rate: Number(taxRate) || 0,
         shipping_cost: shippingNum,
         shipping_notes: shippingNotes.trim() || null,
+        extra_charges: extraNum,
         payment_method: paymentMethod,
         paid_amount: paidAmount,
         show_previous_balance: showPreviousBalance ? 1 : 0,
@@ -1032,6 +1043,7 @@ export default function POSScreen({ onLowStockChange }) {
                 {discountAmount > 0 && <span className="ml-2 text-rose-600 font-mono font-medium">(-Rs. {discountAmount.toLocaleString()})</span>}
                 {taxAmount > 0 && <span className="ml-2 text-amber-800 font-mono font-bold">(+Tax {taxRate}%: Rs. {taxAmount.toLocaleString()})</span>}
                 {shippingNum > 0 && <span className="ml-2 text-blue-700 font-mono font-bold">(+کرایہ: Rs. {shippingNum.toLocaleString()})</span>}
+                {extraNum > 0 && <span className="ml-2 text-amber-700 font-mono font-bold">(+{isUrdu ? 'اضافی' : 'Extra'}: Rs. {extraNum.toLocaleString()})</span>}
               </div>
               <div className="text-xs text-slate-500">{t('items_count')} {cart.reduce((s, i) => s + i.quantity, 0)}</div>
             </div>
@@ -1102,7 +1114,9 @@ export default function POSScreen({ onLowStockChange }) {
                   <div className="text-[10.5px] text-emerald-700">
                     {discountAmount > 0
                       ? (isUrdu ? `اصل سب ٹوٹل: Rs. ${subtotal.toLocaleString()} | رعایت: Rs. ${discountAmount.toLocaleString()}` : `Subtotal: Rs. ${subtotal.toLocaleString()} | Discount: Rs. ${discountAmount.toLocaleString()}`)
-                      : (isUrdu ? 'بل راؤنڈ کرنے یا گاہک کو رعایت دینے کے لیے یہاں رقم لکھیں' : 'Change total to apply custom deal discount')}
+                      : extraNum > 0
+                        ? (isUrdu ? `اصل سب ٹوٹل: Rs. ${subtotal.toLocaleString()} | اضافی رقم: +Rs. ${extraNum.toLocaleString()}` : `Subtotal: Rs. ${subtotal.toLocaleString()} | Extra: +Rs. ${extraNum.toLocaleString()}`)
+                        : (isUrdu ? 'بل راؤنڈ کرنے، رعایت دینے یا اضافی رقم شامل کرنے کے لیے یہاں رقم لکھیں' : 'Change total to apply custom deal discount or extra charges')}
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
@@ -1116,14 +1130,23 @@ export default function POSScreen({ onLowStockChange }) {
                       if (enteredVal === '') {
                         setDiscountType('amount');
                         setDiscountValue(0);
+                        setExtraCharges(0);
                         return;
                       }
                       const newTotal = Number(enteredVal);
                       if (!isNaN(newTotal) && newTotal >= 0) {
-                        const baseBeforeDisc = subtotal + taxAmount + shippingNum;
-                        const diff = Math.max(0, baseBeforeDisc - newTotal);
-                        setDiscountType('amount');
-                        setDiscountValue(diff);
+                        const rawBase = subtotal + taxAmount + shippingNum;
+                        if (newTotal < rawBase) {
+                          setDiscountType('amount');
+                          setDiscountValue(Math.round((rawBase - newTotal) * 100) / 100);
+                          setExtraCharges(0);
+                        } else if (newTotal > rawBase) {
+                          setDiscountValue(0);
+                          setExtraCharges(Math.round((newTotal - rawBase) * 100) / 100);
+                        } else {
+                          setDiscountValue(0);
+                          setExtraCharges(0);
+                        }
                       }
                     }}
                     className="w-28 px-2.5 py-1 bg-white border-2 border-emerald-500 rounded-xl text-sm font-mono font-black text-right text-emerald-950 focus:outline-hidden focus:ring-2 focus:ring-emerald-400 shadow-xs"
@@ -1142,6 +1165,7 @@ export default function POSScreen({ onLowStockChange }) {
                       const rounded = Math.floor(subtotal / 100) * 100;
                       setDiscountType('amount');
                       setDiscountValue(subtotal - rounded);
+                      setExtraCharges(0);
                     }}
                     className="px-2 py-0.5 bg-white hover:bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-md font-mono font-bold cursor-pointer transition-colors"
                   >
@@ -1155,22 +1179,24 @@ export default function POSScreen({ onLowStockChange }) {
                       const rounded = Math.floor(subtotal / 500) * 500;
                       setDiscountType('amount');
                       setDiscountValue(subtotal - rounded);
+                      setExtraCharges(0);
                     }}
                     className="px-2 py-0.5 bg-white hover:bg-emerald-100 text-emerald-900 border border-emerald-300 rounded-md font-mono font-bold cursor-pointer transition-colors"
                   >
                     Rs. {Math.floor(subtotal / 500) * 500}
                   </button>
                 )}
-                {discountAmount > 0 && (
+                {(discountAmount > 0 || extraNum > 0) && (
                   <button
                     type="button"
                     onClick={() => {
                       setDiscountType('amount');
                       setDiscountValue(0);
+                      setExtraCharges(0);
                     }}
                     className="px-2 py-0.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-md font-bold cursor-pointer transition-colors"
                   >
-                    {isUrdu ? 'رعایت ختم' : 'Reset'}
+                    {isUrdu ? 'ری سیٹ' : 'Reset'}
                   </button>
                 )}
               </div>
