@@ -89,6 +89,18 @@ export default function POSScreen({ onLowStockChange }) {
   });
   const [taxRate, setTaxRate] = useState(0); // e.g. 0% or custom
   const [defaultTaxRate, setDefaultTaxRate] = useState(0);
+  const [shippingCost, setShippingCost] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(DRAFT_STORAGE_KEY) || '{}');
+      return saved.shippingCost || 0;
+    } catch (_) { return 0; }
+  });
+  const [shippingNotes, setShippingNotes] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(DRAFT_STORAGE_KEY) || '{}');
+      return saved.shippingNotes || '';
+    } catch (_) { return ''; }
+  });
   const [paymentMethod, setPaymentMethod] = useState('cash'); // 'cash', 'card', 'online'
   const [tenderedCash, setTenderedCash] = useState('');
   const [notes, setNotes] = useState('');
@@ -183,6 +195,8 @@ export default function POSScreen({ onLowStockChange }) {
           customerPhone,
           selectedCustomerId,
           discountValue,
+          shippingCost,
+          shippingNotes,
           savedAt: new Date().toISOString()
         };
         localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
@@ -192,7 +206,7 @@ export default function POSScreen({ onLowStockChange }) {
     } catch (e) {
       console.warn('Could not auto-save draft bill to localStorage:', e);
     }
-  }, [cart, customerMode, customerName, customerPhone, selectedCustomerId, discountValue]);
+  }, [cart, customerMode, customerName, customerPhone, selectedCustomerId, discountValue, shippingCost, shippingNotes]);
 
   // Barcode / Manual Input Handler (Scanner or Manual Typing)
   const handleBarcodeScan = async (barcode) => {
@@ -398,6 +412,8 @@ export default function POSScreen({ onLowStockChange }) {
     setShowPreviousBalance(true);
     setDiscountValue(0);
     setTaxRate(defaultTaxRate);
+    setShippingCost(0);
+    setShippingNotes('');
     setTenderedCash('');
     setNotes('');
     setErrorMsg('');
@@ -420,7 +436,8 @@ export default function POSScreen({ onLowStockChange }) {
 
   const taxableAmount = subtotal - discountAmount;
   const taxAmount = (taxableAmount * (Number(taxRate) || 0)) / 100;
-  const grandTotal = Math.round((taxableAmount + taxAmount) * 100) / 100;
+  const shippingNum = Math.max(0, Number(shippingCost) || 0);
+  const grandTotal = Math.round((taxableAmount + taxAmount + shippingNum) * 100) / 100;
 
   // In Cash mode, paidAmount defaults to grandTotal; In Udhar mode, defaults to 0 (full Udhar)
   const paidAmount = customerMode === 'walkin'
@@ -541,6 +558,8 @@ export default function POSScreen({ onLowStockChange }) {
         discount_amount: discountAmount,
         tax_rate: Number(taxRate) || 0,
         tax_amount: taxAmount,
+        shipping_cost: shippingNum,
+        shipping_notes: shippingNotes.trim() || null,
         grand_total: grandTotal,
         paid_amount: paidAmount,
         change_amount: changeDue,
@@ -599,6 +618,8 @@ export default function POSScreen({ onLowStockChange }) {
         discount_type: discountType,
         discount_value: Number(discountValue) || 0,
         tax_rate: Number(taxRate) || 0,
+        shipping_cost: shippingNum,
+        shipping_notes: shippingNotes.trim() || null,
         payment_method: paymentMethod,
         paid_amount: paidAmount,
         show_previous_balance: showPreviousBalance ? 1 : 0,
@@ -988,6 +1009,19 @@ export default function POSScreen({ onLowStockChange }) {
               />
               <span className="text-slate-500 font-semibold">%</span>
             </div>
+
+            <div className="flex items-center space-x-2">
+              <span className="text-slate-600 font-bold">{isUrdu ? '🚚 کرایہ / کوریئر:' : '🚚 Shipping:'}</span>
+              <span className="text-slate-400 font-bold font-mono">Rs.</span>
+              <input
+                type="number"
+                min="0"
+                value={shippingCost || ''}
+                placeholder="0"
+                onChange={(e) => setShippingCost(e.target.value === '' ? 0 : Math.max(0, Number(e.target.value)))}
+                className="w-20 px-2 py-1 bg-white border border-slate-300 rounded-lg text-right font-mono text-slate-900 focus:border-emerald-500 focus:outline-hidden"
+              />
+            </div>
           </div>
 
           {/* Subtotal / Net Due */}
@@ -997,6 +1031,7 @@ export default function POSScreen({ onLowStockChange }) {
                 <span>{t('subtotal')} </span><span className="font-mono font-semibold text-slate-800">Rs. {subtotal.toLocaleString()}</span>
                 {discountAmount > 0 && <span className="ml-2 text-rose-600 font-mono font-medium">(-Rs. {discountAmount.toLocaleString()})</span>}
                 {taxAmount > 0 && <span className="ml-2 text-amber-800 font-mono font-bold">(+Tax {taxRate}%: Rs. {taxAmount.toLocaleString()})</span>}
+                {shippingNum > 0 && <span className="ml-2 text-blue-700 font-mono font-bold">(+کرایہ: Rs. {shippingNum.toLocaleString()})</span>}
               </div>
               <div className="text-xs text-slate-500">{t('items_count')} {cart.reduce((s, i) => s + i.quantity, 0)}</div>
             </div>
@@ -1085,7 +1120,8 @@ export default function POSScreen({ onLowStockChange }) {
                       }
                       const newTotal = Number(enteredVal);
                       if (!isNaN(newTotal) && newTotal >= 0) {
-                        const diff = Math.max(0, subtotal - newTotal);
+                        const baseBeforeDisc = subtotal + taxAmount + shippingNum;
+                        const diff = Math.max(0, baseBeforeDisc - newTotal);
                         setDiscountType('amount');
                         setDiscountValue(diff);
                       }
@@ -1137,6 +1173,80 @@ export default function POSScreen({ onLowStockChange }) {
                     {isUrdu ? 'رعایت ختم' : 'Reset'}
                   </button>
                 )}
+              </div>
+            </div>
+
+            {/* Courier / Transport / Delivery Expense Card */}
+            <div className="bg-blue-50/90 p-3 rounded-2xl border border-blue-200 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <div className="text-xs font-bold text-blue-950 flex items-center gap-1.5">
+                    <span className="text-base">🚚</span>
+                    <span>{isUrdu ? 'کرایہ / کوریئر / ٹرانسپورٹ خرچہ:' : 'Shipping / Transport / Courier:'}</span>
+                  </div>
+                  <div className="text-[10.5px] text-blue-700">
+                    {shippingNum > 0
+                      ? (isUrdu ? `بل میں کوریئر چارجز +Rs. ${shippingNum.toLocaleString()} شامل ہیں` : `+Rs. ${shippingNum.toLocaleString()} added to bill total`)
+                      : (isUrdu ? 'اگر سامان کوریئر، گاڑی یا بلٹی سے بھیجا جا رہا ہے تو رقم درج کریں' : 'Enter shipping/courier charge if sending via transport')}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className="text-xs font-bold text-blue-800 font-mono">Rs.</span>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="0"
+                    value={shippingCost || ''}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setShippingCost(val === '' ? 0 : Math.max(0, Number(val)));
+                    }}
+                    className="w-28 px-2.5 py-1 bg-white border-2 border-blue-400 rounded-xl text-sm font-mono font-black text-right text-blue-950 focus:outline-hidden focus:ring-2 focus:ring-blue-400 shadow-xs"
+                    title={isUrdu ? 'کوریئر یا کرایہ درج کریں' : 'Enter courier or shipping cost'}
+                  />
+                </div>
+              </div>
+
+              {/* Bilty / Tracking Notes Input & Quick Presets */}
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-2 pt-1.5 border-t border-blue-200/70 items-center">
+                <div className="md:col-span-7">
+                  <input
+                    type="text"
+                    placeholder={isUrdu ? "بلٹی / کوریئر نمبر (مثلاً: TCS #12345، کارگو)" : "Bilty / Courier # (e.g. TCS #12345)"}
+                    value={shippingNotes}
+                    onChange={(e) => setShippingNotes(e.target.value)}
+                    className="w-full px-2.5 py-1 bg-white border border-blue-300 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-hidden focus:border-blue-500 font-urdu"
+                  />
+                </div>
+                <div className="md:col-span-5 flex flex-wrap items-center justify-end gap-1">
+                  {[200, 300, 500, 1000].map((amt) => (
+                    <button
+                      key={amt}
+                      type="button"
+                      onClick={() => setShippingCost(amt)}
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold font-mono transition-colors cursor-pointer ${
+                        shippingNum === amt
+                          ? 'bg-blue-600 text-white shadow-xs'
+                          : 'bg-white hover:bg-blue-100 text-blue-900 border border-blue-300'
+                      }`}
+                    >
+                      +{amt}
+                    </button>
+                  ))}
+                  {shippingNum > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShippingCost(0);
+                        setShippingNotes('');
+                      }}
+                      className="px-1.5 py-0.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded text-[10px] font-bold cursor-pointer transition-colors"
+                      title={isUrdu ? 'کرایہ ختم کریں' : 'Remove shipping'}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 

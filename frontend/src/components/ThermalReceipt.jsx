@@ -190,6 +190,10 @@ export default function ThermalReceipt({ invoice, onClose }) {
         msg += `سیلز ٹیکس (${invoice.tax_rate}%): +${currency} ${Number(invoice.tax_amount).toLocaleString()}\n`;
       }
 
+      if (Number(invoice.shipping_cost || 0) > 0) {
+        msg += `🚚 کرایہ / کوریئر (Shipping): +${currency} ${Number(invoice.shipping_cost).toLocaleString()}${invoice.shipping_notes ? ` (${invoice.shipping_notes})` : ''}\n`;
+      }
+
       msg += `*کل بل رقم (Grand Total):* *${currency} ${Number(invoice.grand_total || 0).toLocaleString()}*\n`;
       msg += `*وصول شدہ رقم:* ${currency} ${Number(invoice.paid_amount || 0).toLocaleString()}\n`;
 
@@ -272,6 +276,10 @@ export default function ThermalReceipt({ invoice, onClose }) {
 
     if (invoice.tax_amount > 0) {
       msg += `Tax (${invoice.tax_rate}%): +${currency} ${Number(invoice.tax_amount).toLocaleString()}\n`;
+    }
+
+    if (Number(invoice.shipping_cost || 0) > 0) {
+      msg += `🚚 Shipping / Courier: +${currency} ${Number(invoice.shipping_cost).toLocaleString()}${invoice.shipping_notes ? ` (${invoice.shipping_notes})` : ''}\n`;
     }
 
     msg += `*TOTAL AMOUNT:* *${currency} ${Number(invoice.grand_total || 0).toLocaleString()}*\n`;
@@ -681,6 +689,13 @@ export default function ThermalReceipt({ invoice, onClose }) {
             <div className="flex justify-between text-gray-800">
               <span>{isUrduReceipt ? 'سیلز ٹیکس' : 'Tax'} ({invoice.tax_rate}%):</span>
               <span className="font-mono">+ {currency} {invoice.tax_amount?.toLocaleString()}</span>
+            </div>
+          )}
+
+          {Number(invoice.shipping_cost || 0) > 0 && (
+            <div className="flex justify-between text-gray-800">
+              <span>{isUrduReceipt ? '🚚 کرایہ / کوریئر / ٹرانسپورٹ:' : '🚚 Shipping / Courier:'} {invoice.shipping_notes ? `(${invoice.shipping_notes})` : ''}</span>
+              <span className="font-mono font-semibold">+ {currency} {Number(invoice.shipping_cost).toLocaleString()}</span>
             </div>
           )}
 

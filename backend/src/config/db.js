@@ -227,9 +227,11 @@ async function initDb() {
     }
     try {
       await exec("ALTER TABLE invoices ADD COLUMN IF NOT EXISTS show_previous_balance INTEGER DEFAULT 1;");
-      console.log('✓ Supabase PostgreSQL: show_previous_balance column verified in invoices.');
+      await exec("ALTER TABLE invoices ADD COLUMN IF NOT EXISTS shipping_cost NUMERIC(12, 2) DEFAULT 0.0;");
+      await exec("ALTER TABLE invoices ADD COLUMN IF NOT EXISTS shipping_notes TEXT;");
+      console.log('✓ Supabase PostgreSQL: show_previous_balance, shipping_cost & shipping_notes verified in invoices.');
     } catch (pgErr) {
-      console.warn('Postgres show_previous_balance migration warning:', pgErr.message);
+      console.warn('Postgres migration warning:', pgErr.message);
     }
     return;
   }
@@ -249,7 +251,7 @@ async function initDb() {
     seed();
   }
 
-  // Safe schema migrations for Void / Cancel / Balance feature
+  // Safe schema migrations for Void / Cancel / Balance / Shipping feature
   try {
     const invCols = (await query("PRAGMA table_info(invoices)")).map(c => c.name);
     if (!invCols.includes('void_reason')) {
@@ -270,6 +272,14 @@ async function initDb() {
     if (!invCols.includes('show_previous_balance')) {
       db.exec("ALTER TABLE invoices ADD COLUMN show_previous_balance INTEGER DEFAULT 1;");
       console.log("✓ SQLite: show_previous_balance column auto-added to invoices table.");
+    }
+    if (!invCols.includes('shipping_cost')) {
+      db.exec("ALTER TABLE invoices ADD COLUMN shipping_cost REAL DEFAULT 0.0;");
+      console.log("✓ SQLite: shipping_cost column auto-added to invoices table.");
+    }
+    if (!invCols.includes('shipping_notes')) {
+      db.exec("ALTER TABLE invoices ADD COLUMN shipping_notes TEXT;");
+      console.log("✓ SQLite: shipping_notes column auto-added to invoices table.");
     }
   } catch (migErr) {
     console.warn('Schema migration check warning:', migErr.message);

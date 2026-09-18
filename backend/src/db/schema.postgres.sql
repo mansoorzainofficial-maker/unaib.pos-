@@ -91,6 +91,8 @@ CREATE TABLE IF NOT EXISTS invoices (
     previous_customer_balance NUMERIC(12, 2) DEFAULT 0.0,
     new_customer_balance NUMERIC(12, 2) DEFAULT 0.0,
     show_previous_balance INTEGER DEFAULT 1,
+    shipping_cost NUMERIC(12, 2) DEFAULT 0.0,
+    shipping_notes TEXT,
     notes TEXT,
     void_reason TEXT,
     voided_at TIMESTAMPTZ,

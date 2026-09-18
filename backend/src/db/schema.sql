@@ -93,6 +93,8 @@ CREATE TABLE IF NOT EXISTS invoices (
     previous_customer_balance REAL DEFAULT 0.0,
     new_customer_balance REAL DEFAULT 0.0,
     show_previous_balance INTEGER DEFAULT 1,
+    shipping_cost REAL DEFAULT 0.0,
+    shipping_notes TEXT,
     notes TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
