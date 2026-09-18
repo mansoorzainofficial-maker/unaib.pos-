@@ -25,4 +25,5 @@ backups/
 *.sqlite-shm
 *.sqlite
 *.db
+client-login-credentials.txt
 

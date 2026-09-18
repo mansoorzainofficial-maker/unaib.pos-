@@ -14,7 +14,7 @@ function seed() {
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
 
-  insertUser.run(1, 'admin', adminPass, '1234', 'Unaib Store Admin', 'admin', '+92 300 9258123');
+  insertUser.run(1, 'admin', '81d9c2c23641456e33ad3468ade1ba44:16805866b0baa649696180f20d18fddfabcefc6f1cc3aecbfe1110c9875a36cd12f12992e2814d1001c9f886746d6fc91588e3c5b138973d99b2ed66d11a1dc8', '5094', 'Unaib Store Admin', 'admin', '+92 300 9258123');
   insertUser.run(2, 'cashier1', cashierPass, '1111', 'Muhammad Ali (Cashier)', 'cashier', '+92 321 4455667');
 
   // 2. Initial Categories
