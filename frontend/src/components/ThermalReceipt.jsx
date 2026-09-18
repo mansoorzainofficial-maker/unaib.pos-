@@ -180,7 +180,8 @@ export default function ThermalReceipt({ invoice, onClose }) {
 
       msg += `\n===============================\n`;
       msg += `کل آئٹمز: ${totalItemsCount}  (تعداد: ${totalQtyCount})\n`;
-      msg += `*سامان کا سب ٹوٹل:* ${currency} ${Number(invoice.subtotal || 0).toLocaleString()}\n`;
+      const displaySubtotal = Number(invoice.subtotal || 0) + Number(invoice.extra_charges || 0);
+      msg += `*سب ٹوٹل:* ${currency} ${displaySubtotal.toLocaleString()}\n`;
 
       if (invoice.discount_amount > 0) {
         msg += `رعایت / ڈسکاؤنٹ: -${currency} ${Number(invoice.discount_amount).toLocaleString()}\n`;
@@ -192,10 +193,6 @@ export default function ThermalReceipt({ invoice, onClose }) {
 
       if (Number(invoice.shipping_cost || 0) > 0) {
         msg += `🚚 کرایہ / کوریئر (Shipping): +${currency} ${Number(invoice.shipping_cost).toLocaleString()}${invoice.shipping_notes ? ` (${invoice.shipping_notes})` : ''}\n`;
-      }
-
-      if (Number(invoice.extra_charges || 0) > 0) {
-        msg += `➕ اضافی رقم / سرچارج (Extra): +${currency} ${Number(invoice.extra_charges).toLocaleString()}\n`;
       }
 
       msg += `*کل بل رقم (Grand Total):* *${currency} ${Number(invoice.grand_total || 0).toLocaleString()}*\n`;
@@ -272,7 +269,8 @@ export default function ThermalReceipt({ invoice, onClose }) {
 
     msg += `\n===============================\n`;
     msg += `Total Items: ${totalItemsCount}  (Qty: ${totalQtyCount})\n`;
-    msg += `*Subtotal:* ${currency} ${Number(invoice.subtotal || 0).toLocaleString()}\n`;
+    const displaySubtotalEn = Number(invoice.subtotal || 0) + Number(invoice.extra_charges || 0);
+    msg += `*Subtotal:* ${currency} ${displaySubtotalEn.toLocaleString()}\n`;
 
     if (invoice.discount_amount > 0) {
       msg += `Discount: -${currency} ${Number(invoice.discount_amount).toLocaleString()}\n`;
@@ -284,10 +282,6 @@ export default function ThermalReceipt({ invoice, onClose }) {
 
     if (Number(invoice.shipping_cost || 0) > 0) {
       msg += `🚚 Shipping / Courier: +${currency} ${Number(invoice.shipping_cost).toLocaleString()}${invoice.shipping_notes ? ` (${invoice.shipping_notes})` : ''}\n`;
-    }
-
-    if (Number(invoice.extra_charges || 0) > 0) {
-      msg += `➕ Extra / Surcharge: +${currency} ${Number(invoice.extra_charges).toLocaleString()}\n`;
     }
 
     msg += `*TOTAL AMOUNT:* *${currency} ${Number(invoice.grand_total || 0).toLocaleString()}*\n`;
@@ -683,7 +677,7 @@ export default function ThermalReceipt({ invoice, onClose }) {
         <div className="border-t-2 border-black pt-1.5 space-y-0.5 text-[10px]">
           <div className="flex justify-between font-medium text-gray-700">
             <span>{isUrduReceipt ? `سامان: ${totalItemsCount} (تعداد: ${totalQtyCount})` : `Items: ${totalItemsCount} (Qty: ${totalQtyCount})`}</span>
-            <span className="font-mono">{isUrduReceipt ? 'سب ٹوٹل: ' : 'Subtotal: '}{currency} {invoice.subtotal?.toLocaleString()}</span>
+            <span className="font-mono">{isUrduReceipt ? 'سب ٹوٹل: ' : 'Subtotal: '}{currency} {(Number(invoice.subtotal || 0) + Number(invoice.extra_charges || 0)).toLocaleString()}</span>
           </div>
 
           {invoice.discount_amount > 0 && (
@@ -704,13 +698,6 @@ export default function ThermalReceipt({ invoice, onClose }) {
             <div className="flex justify-between text-gray-800">
               <span>{isUrduReceipt ? '🚚 کرایہ / کوریئر / ٹرانسپورٹ:' : '🚚 Shipping / Courier:'} {invoice.shipping_notes ? `(${invoice.shipping_notes})` : ''}</span>
               <span className="font-mono font-semibold">+ {currency} {Number(invoice.shipping_cost).toLocaleString()}</span>
-            </div>
-          )}
-
-          {Number(invoice.extra_charges || 0) > 0 && (
-            <div className="flex justify-between text-gray-800">
-              <span>{isUrduReceipt ? '➕ اضافی رقم / سرچارج:' : '➕ Extra / Surcharge:'}</span>
-              <span className="font-mono font-semibold text-amber-700">+ {currency} {Number(invoice.extra_charges).toLocaleString()}</span>
             </div>
           )}
 

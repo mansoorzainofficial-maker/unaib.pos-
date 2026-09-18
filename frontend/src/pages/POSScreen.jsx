@@ -1043,7 +1043,7 @@ export default function POSScreen({ onLowStockChange }) {
                 {discountAmount > 0 && <span className="ml-2 text-rose-600 font-mono font-medium">(-Rs. {discountAmount.toLocaleString()})</span>}
                 {taxAmount > 0 && <span className="ml-2 text-amber-800 font-mono font-bold">(+Tax {taxRate}%: Rs. {taxAmount.toLocaleString()})</span>}
                 {shippingNum > 0 && <span className="ml-2 text-blue-700 font-mono font-bold">(+کرایہ: Rs. {shippingNum.toLocaleString()})</span>}
-                {extraNum > 0 && <span className="ml-2 text-amber-700 font-mono font-bold">(+{isUrdu ? 'اضافی' : 'Extra'}: Rs. {extraNum.toLocaleString()})</span>}
+                {extraNum > 0 && <span className="ml-2 text-emerald-700 font-mono font-bold">(+{isUrdu ? 'ڈیل' : 'Deal'}: Rs. {extraNum.toLocaleString()})</span>}
               </div>
               <div className="text-xs text-slate-500">{t('items_count')} {cart.reduce((s, i) => s + i.quantity, 0)}</div>
             </div>
@@ -1115,8 +1115,8 @@ export default function POSScreen({ onLowStockChange }) {
                     {discountAmount > 0
                       ? (isUrdu ? `اصل سب ٹوٹل: Rs. ${subtotal.toLocaleString()} | رعایت: Rs. ${discountAmount.toLocaleString()}` : `Subtotal: Rs. ${subtotal.toLocaleString()} | Discount: Rs. ${discountAmount.toLocaleString()}`)
                       : extraNum > 0
-                        ? (isUrdu ? `اصل سب ٹوٹل: Rs. ${subtotal.toLocaleString()} | اضافی رقم: +Rs. ${extraNum.toLocaleString()}` : `Subtotal: Rs. ${subtotal.toLocaleString()} | Extra: +Rs. ${extraNum.toLocaleString()}`)
-                        : (isUrdu ? 'بل راؤنڈ کرنے، رعایت دینے یا اضافی رقم شامل کرنے کے لیے یہاں رقم لکھیں' : 'Change total to apply custom deal discount or extra charges')}
+                        ? (isUrdu ? `اصل سب ٹوٹل: Rs. ${subtotal.toLocaleString()} | طے شدہ فائنل رقم: Rs. ${grandTotal.toLocaleString()}` : `Subtotal: Rs. ${subtotal.toLocaleString()} | Agreed Deal: Rs. ${grandTotal.toLocaleString()}`)
+                        : (isUrdu ? 'بل راؤنڈ کرنے، رعایت دینے یا طے شدہ رقم کے لیے یہاں لکھیں' : 'Enter agreed deal amount or discount')}
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
