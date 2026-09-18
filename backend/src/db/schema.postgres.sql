@@ -90,6 +90,7 @@ CREATE TABLE IF NOT EXISTS invoices (
     status TEXT DEFAULT 'completed',
     previous_customer_balance NUMERIC(12, 2) DEFAULT 0.0,
     new_customer_balance NUMERIC(12, 2) DEFAULT 0.0,
+    show_previous_balance INTEGER DEFAULT 1,
     notes TEXT,
     void_reason TEXT,
     voided_at TIMESTAMPTZ,

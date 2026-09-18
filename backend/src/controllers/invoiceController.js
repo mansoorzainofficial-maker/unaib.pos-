@@ -44,6 +44,7 @@ async function createInvoice(req, res) {
       payment_method, // 'cash', 'card', 'online', 'split'
       paid_amount,
       notes,
+      show_previous_balance,
       is_offline_sync,
       offline_created_at,
       offline_local_id
@@ -144,6 +145,9 @@ async function createInvoice(req, res) {
         }
 
         const unitPrice = item.unit_price !== undefined ? Number(item.unit_price) : product.sale_price;
+        if (isNaN(unitPrice) || unitPrice < 0) {
+          throw new Error(`Invalid price for product "${product.name}". Unit price cannot be negative.`);
+        }
         const lineTotal = unitPrice * qty;
         subtotal += lineTotal;
 
@@ -243,6 +247,7 @@ async function createInvoice(req, res) {
       }
 
       // 4. Insert Invoice Header
+      const showPrevBal = show_previous_balance !== undefined ? (show_previous_balance ? 1 : 0) : 1;
       const invoiceNumber = await generateInvoiceNumber(txGet);
       const invoiceInsert = await txRun(`
         INSERT INTO invoices (
@@ -250,8 +255,8 @@ async function createInvoice(req, res) {
           cashier_id, subtotal, discount_type, discount_value,
           discount_amount, tax_rate, tax_amount, grand_total,
           paid_amount, change_amount, balance_due, payment_method, notes,
-          previous_customer_balance, new_customer_balance
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          previous_customer_balance, new_customer_balance, show_previous_balance
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `, [
         invoiceNumber,
         customerId,
@@ -273,7 +278,8 @@ async function createInvoice(req, res) {
           ? (notes ? `${notes} [OFFLINE_ID:${offline_local_id}]` : `[OFFLINE_ID:${offline_local_id}]`)
           : (notes || null),
         prevCustomerBalance,
-        newCustomerBalance
+        newCustomerBalance,
+        showPrevBal
       ]);
 
       const invoiceId = invoiceInsert.lastInsertRowid;
@@ -456,6 +462,10 @@ async function getFullInvoiceDetails(invoiceId) {
   invoice.customer_balance = (invoice.new_customer_balance !== null && invoice.new_customer_balance !== undefined)
     ? invoice.new_customer_balance
     : invoice.live_customer_balance;
+
+  invoice.show_previous_balance = (invoice.show_previous_balance !== null && invoice.show_previous_balance !== undefined)
+    ? Number(invoice.show_previous_balance)
+    : 1;
 
   const items = await query(`
     SELECT ii.*, p.barcode

@@ -201,8 +201,8 @@ export default function ThermalReceipt({ invoice, onClose }) {
         msg += `بقایا گاہک کو واپسی: ${currency} ${Number(invoice.change_amount).toLocaleString()}\n`;
       }
 
-      // Customer Khata running position
-      if (invoice.customer_balance !== undefined && invoice.customer_balance !== null) {
+      // Customer Khata running position (controlled by show_previous_balance toggle)
+      if (Number(invoice.show_previous_balance ?? 1) === 1 && invoice.customer_balance !== undefined && invoice.customer_balance !== null) {
         const prevBalance = invoice.previous_customer_balance !== undefined && invoice.previous_customer_balance !== null
           ? Number(invoice.previous_customer_balance)
           : Math.max(0, (Number(invoice.customer_balance) || 0) - (Number(invoice.balance_due) || 0));
@@ -285,8 +285,8 @@ export default function ThermalReceipt({ invoice, onClose }) {
       msg += `Change Wapis: ${currency} ${Number(invoice.change_amount).toLocaleString()}\n`;
     }
 
-    // Customer Khata running position
-    if (invoice.customer_balance !== undefined && invoice.customer_balance !== null) {
+    // Customer Khata running position (controlled by show_previous_balance toggle)
+    if (Number(invoice.show_previous_balance ?? 1) === 1 && invoice.customer_balance !== undefined && invoice.customer_balance !== null) {
       const prevBalance = invoice.previous_customer_balance !== undefined && invoice.previous_customer_balance !== null
         ? Number(invoice.previous_customer_balance)
         : Math.max(0, (Number(invoice.customer_balance) || 0) - (Number(invoice.balance_due) || 0));
@@ -721,7 +721,7 @@ export default function ThermalReceipt({ invoice, onClose }) {
         </div>
 
         {/* CUSTOMER KHATA / LEDGER STATEMENT SECTION */}
-        {invoice.customer_balance !== undefined && invoice.customer_balance !== null && (
+        {Number(invoice.show_previous_balance ?? 1) === 1 && invoice.customer_balance !== undefined && invoice.customer_balance !== null && (
           <div className="border border-black rounded-sm p-1.5 my-2 bg-gray-50 text-[9.5px] space-y-0.5">
             <div className="font-black text-center border-b border-gray-300 pb-0.5 uppercase tracking-wider text-[9px] text-black">
               {isUrduReceipt ? 'گاہک کا مکمل کھاتہ و لیجر خلاصہ' : 'Customer Khata / Ledger Summary'}

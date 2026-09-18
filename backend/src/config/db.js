@@ -16,7 +16,9 @@ try {
 } catch (_) {}
 
 // Check if PostgreSQL (Supabase) is configured via environment variable
-const isPostgres = Boolean(process.env.DATABASE_URL && process.env.DATABASE_URL.trim().length > 0);
+const isPostgres = process.env.FORCE_SQLITE === 'true'
+  ? false
+  : Boolean(process.env.DATABASE_URL && process.env.DATABASE_URL.trim().length > 0);
 
 let pgPool = null;
 
@@ -223,6 +225,12 @@ async function initDb() {
       await exec(schemaSql);
       console.log('Supabase PostgreSQL schema initialized / verified.');
     }
+    try {
+      await exec("ALTER TABLE invoices ADD COLUMN IF NOT EXISTS show_previous_balance INTEGER DEFAULT 1;");
+      console.log('✓ Supabase PostgreSQL: show_previous_balance column verified in invoices.');
+    } catch (pgErr) {
+      console.warn('Postgres show_previous_balance migration warning:', pgErr.message);
+    }
     return;
   }
 
@@ -241,7 +249,7 @@ async function initDb() {
     seed();
   }
 
-  // Safe schema migrations for Void / Cancel feature
+  // Safe schema migrations for Void / Cancel / Balance feature
   try {
     const invCols = (await query("PRAGMA table_info(invoices)")).map(c => c.name);
     if (!invCols.includes('void_reason')) {
@@ -258,6 +266,10 @@ async function initDb() {
     }
     if (!invCols.includes('new_customer_balance')) {
       db.exec("ALTER TABLE invoices ADD COLUMN new_customer_balance REAL DEFAULT 0.0;");
+    }
+    if (!invCols.includes('show_previous_balance')) {
+      db.exec("ALTER TABLE invoices ADD COLUMN show_previous_balance INTEGER DEFAULT 1;");
+      console.log("✓ SQLite: show_previous_balance column auto-added to invoices table.");
     }
   } catch (migErr) {
     console.warn('Schema migration check warning:', migErr.message);

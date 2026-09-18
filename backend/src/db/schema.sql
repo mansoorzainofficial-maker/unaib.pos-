@@ -92,6 +92,7 @@ CREATE TABLE IF NOT EXISTS invoices (
     status TEXT DEFAULT 'completed', -- 'completed', 'refunded', 'cancelled'
     previous_customer_balance REAL DEFAULT 0.0,
     new_customer_balance REAL DEFAULT 0.0,
+    show_previous_balance INTEGER DEFAULT 1,
     notes TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );

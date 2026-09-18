@@ -77,6 +77,7 @@ export default function POSScreen({ onLowStockChange }) {
   const [showWalkinDetails, setShowWalkinDetails] = useState(false);
   const [partySearchQuery, setPartySearchQuery] = useState('');
   const [isPartyDropdownOpen, setIsPartyDropdownOpen] = useState(false);
+  const [showPreviousBalance, setShowPreviousBalance] = useState(true);
 
   // Discount & Payment
   const [discountType, setDiscountType] = useState('amount'); // 'amount' or 'percentage'
@@ -278,6 +279,7 @@ export default function POSScreen({ onLowStockChange }) {
         name: product.name,
         barcode: product.barcode,
         sale_price: product.sale_price,
+        cost_price: Number(product.cost_price || 0),
         stock_quantity: product.stock_quantity,
         has_serials: product.has_serials,
         warranty_months: product.warranty_months,
@@ -356,6 +358,19 @@ export default function POSScreen({ onLowStockChange }) {
     setCart(cart.filter(item => item.product_id !== productId));
   };
 
+  // Editable price per line item
+  const handlePriceChange = (productId, newPrice) => {
+    setCart(prev => prev.map(item => {
+      if (item.product_id === productId) {
+        return {
+          ...item,
+          sale_price: newPrice === '' ? '' : newPrice
+        };
+      }
+      return item;
+    }));
+  };
+
   // Clear entire cart & reset to default Walk-in Customer
   const clearCart = () => {
     setCart([]);
@@ -365,6 +380,7 @@ export default function POSScreen({ onLowStockChange }) {
     setSelectedCustomerId(null);
     setShowCustomerList(false);
     setShowWalkinDetails(false);
+    setShowPreviousBalance(true);
     setDiscountValue(0);
     setTaxRate(defaultTaxRate);
     setTenderedCash('');
@@ -377,7 +393,7 @@ export default function POSScreen({ onLowStockChange }) {
   };
 
   // Calculations
-  const subtotal = cart.reduce((sum, item) => sum + (item.sale_price * item.quantity), 0);
+  const subtotal = cart.reduce((sum, item) => sum + ((Number(item.sale_price) || 0) * item.quantity), 0);
 
   let discountAmount = 0;
   if (discountType === 'percentage') {
@@ -419,6 +435,12 @@ export default function POSScreen({ onLowStockChange }) {
   const handleProcessSale = async () => {
     if (cart.length === 0) {
       setErrorMsg('Cart is empty');
+      return;
+    }
+
+    const invalidPriceItem = cart.find(it => isNaN(Number(it.sale_price)) || Number(it.sale_price) < 0);
+    if (invalidPriceItem) {
+      setErrorMsg(isUrdu ? `پراڈکٹ "${invalidPriceItem.name}" کا ریٹ منفی یا غلط نہیں ہو سکتا۔` : `Invalid rate for "${invalidPriceItem.name}". Rate cannot be negative.`);
       return;
     }
 
@@ -510,6 +532,7 @@ export default function POSScreen({ onLowStockChange }) {
         balance_due: balanceDue,
         payment_method: paymentMethod,
         notes: notes || '',
+        show_previous_balance: showPreviousBalance ? 1 : 0,
         created_at: savedRecord.created_at,
         is_offline: true
       };
@@ -563,6 +586,7 @@ export default function POSScreen({ onLowStockChange }) {
         tax_rate: Number(taxRate) || 0,
         payment_method: paymentMethod,
         paid_amount: paidAmount,
+        show_previous_balance: showPreviousBalance ? 1 : 0,
         notes: notes
       };
 
@@ -827,12 +851,34 @@ export default function POSScreen({ onLowStockChange }) {
                       </div>
                     </td>
 
-                    <td className="py-2.5 text-right font-mono text-slate-700">
-                      Rs. {item.sale_price.toLocaleString()}
+                    {/* Rate / Unit Price - Editable */}
+                    <td className="py-2.5 text-right font-mono">
+                      <div className="flex flex-col items-end">
+                        <div className="relative">
+                          <span className="absolute left-1.5 top-1 text-[10px] text-slate-400 font-bold">Rs.</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="any"
+                            value={item.sale_price}
+                            onChange={(e) => handlePriceChange(item.product_id, e.target.value)}
+                            className="w-24 pl-6 pr-1.5 py-1 bg-white border border-slate-300 rounded-lg text-right font-mono font-bold text-slate-900 text-xs focus:border-emerald-500 focus:outline-hidden"
+                            title={isUrdu ? 'ریٹ تبدیل کریں' : 'Edit Unit Price'}
+                          />
+                        </div>
+                        {item.cost_price > 0 && Number(item.sale_price) < Number(item.cost_price) && (
+                          <span
+                            className="text-[9px] font-bold text-amber-800 bg-amber-100/90 px-1 py-0.2 rounded border border-amber-300 mt-0.5 whitespace-nowrap"
+                            title={isUrdu ? `خریداری لاگت: Rs. ${item.cost_price}` : `Cost: Rs. ${item.cost_price}`}
+                          >
+                            ⚠️ {isUrdu ? 'لاگت سے کم' : '< Cost'}
+                          </span>
+                        )}
+                      </div>
                     </td>
 
                     <td className="py-2.5 text-right font-mono font-bold text-emerald-600">
-                      Rs. {(item.sale_price * item.quantity).toLocaleString()}
+                      Rs. {((Number(item.sale_price) || 0) * item.quantity).toLocaleString()}
                     </td>
 
                     <td className="py-2.5 pr-3 text-center">
@@ -1337,6 +1383,31 @@ export default function POSScreen({ onLowStockChange }) {
                     Rs. {Math.round(Number(selectedParty?.current_balance || 0) + grandTotal - paidAmount).toLocaleString()}
                   </span>
                 </div>
+              </div>
+
+              {/* Per-Bill Show Previous Balance Toggle */}
+              <div className="bg-white p-2.5 rounded-xl border border-blue-200 flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-bold text-slate-800">
+                    {isUrdu ? 'بل پرچی پر پچھلا بقایا دکھائیں:' : 'Show previous balance on receipt:'}
+                  </span>
+                  <div className="text-[10px] text-slate-500">
+                    {showPreviousBalance
+                      ? (isUrdu ? 'پرچی اور واٹس ایپ پر پچھلا کھاتہ نظر آئے گا' : 'Previous balance will appear on receipt & WhatsApp')
+                      : (isUrdu ? 'پرچی اور واٹس ایپ سے پچھلا کھاتہ چھپ جائے گا' : 'Previous balance will be hidden from receipt & WhatsApp')}
+                  </div>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer select-none shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={showPreviousBalance}
+                    onChange={(e) => setShowPreviousBalance(e.target.checked)}
+                    className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
+                  />
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded ${showPreviousBalance ? 'bg-blue-100 text-blue-800' : 'bg-slate-100 text-slate-600'}`}>
+                    {showPreviousBalance ? (isUrdu ? 'ہاں (دکھائیں)' : 'Yes') : (isUrdu ? 'نہیں (چھپائیں)' : 'No')}
+                  </span>
+                </label>
               </div>
             </div>
           )}
