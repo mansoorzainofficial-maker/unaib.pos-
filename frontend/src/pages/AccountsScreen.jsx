@@ -32,7 +32,8 @@ export default function AccountsScreen() {
     name: '',
     type: 'bank',
     account_number: '',
-    branch_name: ''
+    branch_name: '',
+    current_balance: ''
   });
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -61,7 +62,8 @@ export default function AccountsScreen() {
       name: '',
       type: 'bank',
       account_number: '',
-      branch_name: ''
+      branch_name: '',
+      current_balance: ''
     });
     setFormError('');
     setIsModalOpen(true);
@@ -73,7 +75,8 @@ export default function AccountsScreen() {
       name: acc.name || '',
       type: acc.type || 'bank',
       account_number: acc.account_number || '',
-      branch_name: acc.branch_name || ''
+      branch_name: acc.branch_name || '',
+      current_balance: acc.current_balance !== undefined && acc.current_balance !== null ? String(acc.current_balance) : ''
     });
     setFormError('');
     setIsModalOpen(true);
@@ -102,7 +105,8 @@ export default function AccountsScreen() {
           name: formData.name.trim(),
           type: formData.type,
           account_number: formData.account_number.trim() || null,
-          branch_name: formData.branch_name.trim() || null
+          branch_name: formData.branch_name.trim() || null,
+          current_balance: formData.current_balance !== '' ? Number(formData.current_balance) : undefined
         });
         setSuccessMsg(t('accounts_updated_success'));
       } else {
@@ -110,7 +114,8 @@ export default function AccountsScreen() {
           name: formData.name.trim(),
           type: formData.type,
           account_number: formData.account_number.trim() || null,
-          branch_name: formData.branch_name.trim() || null
+          branch_name: formData.branch_name.trim() || null,
+          current_balance: formData.current_balance !== '' ? Number(formData.current_balance) : 0
         });
         setSuccessMsg(t('accounts_created_success'));
       }
@@ -251,7 +256,7 @@ export default function AccountsScreen() {
       )}
 
       {/* Summary KPI Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center justify-between">
           <div>
             <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
@@ -307,6 +312,20 @@ export default function AccountsScreen() {
             <Smartphone className="w-5 h-5" />
           </div>
         </div>
+
+        <div className="bg-white p-4 rounded-2xl border border-amber-200/80 shadow-xs flex items-center justify-between">
+          <div>
+            <p className="text-[11px] font-bold text-amber-600 uppercase tracking-wider">
+              {t('accounts_total_balance_card')}
+            </p>
+            <p className="text-xl font-black text-amber-800 mt-0.5 font-mono">
+              Rs. {accounts.reduce((sum, a) => sum + Number(a.current_balance || 0), 0).toLocaleString('en-PK', { maximumFractionDigits: 0 })}
+            </p>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600">
+            <CreditCard className="w-5 h-5" />
+          </div>
+        </div>
       </div>
 
       {/* Accounts List & Table */}
@@ -338,19 +357,20 @@ export default function AccountsScreen() {
                 <th className="py-3 px-3 text-center">{t('accounts_col_type')}</th>
                 <th className="py-3 px-4 text-left font-mono">{t('accounts_col_acc_no')}</th>
                 <th className="py-3 px-4">{t('accounts_col_branch')}</th>
+                <th className="py-3 px-4 text-left font-mono">{t('accounts_col_balance')}</th>
                 <th className="py-3 px-3 text-center">{t('accounts_col_actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
               {loading ? (
                 <tr>
-                  <td colSpan="6" className="py-12 text-center text-slate-400">
+                  <td colSpan="7" className="py-12 text-center text-slate-400">
                     <div className="inline-block w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
                   </td>
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan="6" className="py-12 text-center text-slate-400">
+                  <td colSpan="7" className="py-12 text-center text-slate-400">
                     <p className="font-bold text-slate-600 text-sm">{t('accounts_no_accounts')}</p>
                     <p className="text-xs mt-1 text-slate-400">{t('accounts_no_accounts_sub')}</p>
                   </td>
@@ -380,6 +400,17 @@ export default function AccountsScreen() {
                     </td>
                     <td className="py-3 px-4 text-slate-600">
                       {acc.branch_name || '-'}
+                    </td>
+                    <td className="py-3 px-4 text-left whitespace-nowrap font-mono font-bold">
+                      <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-xs ${
+                        Number(acc.current_balance || 0) > 0 
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+                          : Number(acc.current_balance || 0) < 0
+                          ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                          : 'bg-slate-100 text-slate-600 border border-slate-200'
+                      }`}>
+                        Rs. {Number(acc.current_balance || 0).toLocaleString('en-PK', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                      </span>
                     </td>
                     <td className="py-3 px-3 text-center whitespace-nowrap">
                       <div className="flex items-center justify-center space-x-1.5">
@@ -509,6 +540,21 @@ export default function AccountsScreen() {
                   onChange={(e) => setFormData({ ...formData, branch_name: e.target.value })}
                   placeholder={t('accounts_modal_branch_ph')}
                   className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:border-blue-500 focus:outline-hidden"
+                />
+              </div>
+
+              {/* Initial / Current Balance */}
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-slate-700">
+                  {t('accounts_modal_balance_label')}
+                </label>
+                <input
+                  type="number"
+                  step="any"
+                  value={formData.current_balance}
+                  onChange={(e) => setFormData({ ...formData, current_balance: e.target.value })}
+                  placeholder={t('accounts_modal_balance_ph')}
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:border-blue-500 focus:outline-hidden font-mono"
                 />
               </div>
 

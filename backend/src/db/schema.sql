@@ -153,9 +153,24 @@ CREATE TABLE IF NOT EXISTS accounts (
     type TEXT NOT NULL CHECK(type IN ('cash', 'bank', 'wallet')),
     account_number TEXT,
     branch_name TEXT,
+    current_balance REAL NOT NULL DEFAULT 0.0,
     is_default INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 10b. Financial Accounts Ledger (Cash Counter & Bank Inflows/Outflows)
+CREATE TABLE IF NOT EXISTS accounts_ledger (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER REFERENCES accounts(id) ON DELETE CASCADE,
+    entry_type TEXT NOT NULL,
+    reference_no TEXT,
+    debit REAL DEFAULT 0.0,
+    credit REAL DEFAULT 0.0,
+    balance_after REAL DEFAULT 0.0,
+    description TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_accounts_ledger_account ON accounts_ledger(account_id);
 
 -- 11. Unified Party Ledgers (Khata for Supplier & Client)
 CREATE TABLE IF NOT EXISTS ledger_entries (

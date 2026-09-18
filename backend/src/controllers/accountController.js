@@ -9,6 +9,7 @@ async function getAccounts(req, res) {
     const rawAccounts = await Account.getAll();
     const accounts = await Promise.all(rawAccounts.map(async acc => ({
       ...acc,
+      current_balance: await Account.calculateBalance(acc),
       has_transactions: await Account.hasTransactions(acc.id)
     })));
 
@@ -44,6 +45,7 @@ async function getAccountById(req, res) {
       success: true,
       account: {
         ...account,
+        current_balance: await Account.calculateBalance(account),
         has_transactions: await Account.hasTransactions(account.id)
       }
     });
@@ -63,7 +65,7 @@ async function getAccountById(req, res) {
  */
 async function createAccount(req, res) {
   try {
-    const { name, type, account_number, branch_name } = req.body;
+    const { name, type, account_number, branch_name, current_balance, opening_balance } = req.body;
 
     if (!name || !name.trim()) {
       return res.status(400).json({
@@ -89,17 +91,24 @@ async function createAccount(req, res) {
       });
     }
 
+    const initialBal = Number(opening_balance !== undefined ? opening_balance : current_balance) || 0;
     const account = await Account.create({
       name: name.trim(),
       type: type.toLowerCase(),
       account_number: account_number && account_number.trim() ? account_number.trim() : null,
       branch_name: branch_name && branch_name.trim() ? branch_name.trim() : null,
+      current_balance: initialBal,
       is_default: 0
     });
 
+    const liveBal = await Account.calculateBalance(account);
+
     res.status(201).json({
       success: true,
-      account,
+      account: {
+        ...account,
+        current_balance: liveBal
+      },
       message: 'Account created successfully'
     });
   } catch (err) {
@@ -127,7 +136,7 @@ async function updateAccount(req, res) {
       });
     }
 
-    const { name, type, account_number, branch_name } = req.body;
+    const { name, type, account_number, branch_name, current_balance } = req.body;
 
     if (!name || !name.trim()) {
       return res.status(400).json({
@@ -157,12 +166,18 @@ async function updateAccount(req, res) {
       name: name.trim(),
       type: type.toLowerCase(),
       account_number: account_number && account_number.trim() ? account_number.trim() : null,
-      branch_name: branch_name && branch_name.trim() ? branch_name.trim() : null
+      branch_name: branch_name && branch_name.trim() ? branch_name.trim() : null,
+      current_balance: current_balance !== undefined ? Number(current_balance) || 0 : undefined
     });
+
+    const liveBal = await Account.calculateBalance(updated);
 
     res.json({
       success: true,
-      account: updated,
+      account: {
+        ...updated,
+        current_balance: liveBal
+      },
       message: 'Account updated successfully'
     });
   } catch (err) {

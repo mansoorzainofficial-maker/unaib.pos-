@@ -230,7 +230,28 @@ async function initDb() {
       await exec("ALTER TABLE invoices ADD COLUMN IF NOT EXISTS shipping_cost NUMERIC(12, 2) DEFAULT 0.0;");
       await exec("ALTER TABLE invoices ADD COLUMN IF NOT EXISTS shipping_notes TEXT;");
       await exec("ALTER TABLE invoices ADD COLUMN IF NOT EXISTS extra_charges NUMERIC(12, 2) DEFAULT 0.0;");
-      console.log('✓ Supabase PostgreSQL: show_previous_balance, shipping_cost, shipping_notes & extra_charges verified in invoices.');
+      await exec("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS current_balance NUMERIC(12, 2) DEFAULT 0.0;");
+      await exec(`
+        CREATE TABLE IF NOT EXISTS accounts_ledger (
+          id BIGSERIAL PRIMARY KEY,
+          account_id BIGINT REFERENCES accounts(id) ON DELETE CASCADE,
+          entry_type VARCHAR(50) NOT NULL,
+          reference_no VARCHAR(100),
+          debit NUMERIC(12, 2) DEFAULT 0.0,
+          credit NUMERIC(12, 2) DEFAULT 0.0,
+          balance_after NUMERIC(12, 2) DEFAULT 0.0,
+          description TEXT,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+      `);
+      // Sync identity sequences after seeding with explicit IDs
+      try {
+        await exec("SELECT setval(pg_get_serial_sequence('accounts', 'id'), COALESCE((SELECT MAX(id) FROM accounts), 1));");
+        await exec("SELECT setval(pg_get_serial_sequence('users', 'id'), COALESCE((SELECT MAX(id) FROM users), 1));");
+      } catch (seqErr) {
+        console.warn('Postgres sequence sync warning:', seqErr.message);
+      }
+      console.log('✓ Supabase PostgreSQL: show_previous_balance, shipping, extra_charges & accounts verified.');
     } catch (pgErr) {
       console.warn('Postgres migration warning:', pgErr.message);
     }
@@ -400,6 +421,30 @@ async function initDb() {
     db.exec('ALTER TABLE serial_numbers ADD COLUMN purchase_item_id INTEGER REFERENCES purchase_items(id) ON DELETE SET NULL;');
   } catch (snErr) {
     // Column already exists, ignore
+  }
+
+  // Safe schema migrations for Financial Accounts current_balance and accounts_ledger
+  try {
+    const accCols = (await query("PRAGMA table_info(accounts)")).map(c => c.name);
+    if (!accCols.includes('current_balance')) {
+      db.exec("ALTER TABLE accounts ADD COLUMN current_balance REAL DEFAULT 0.0;");
+      console.log("✓ SQLite: current_balance column auto-added to accounts table.");
+    }
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS accounts_ledger (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        account_id INTEGER REFERENCES accounts(id) ON DELETE CASCADE,
+        entry_type TEXT NOT NULL,
+        reference_no TEXT,
+        debit REAL DEFAULT 0.0,
+        credit REAL DEFAULT 0.0,
+        balance_after REAL DEFAULT 0.0,
+        description TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+  } catch (accMigErr) {
+    console.warn('Accounts schema migration warning:', accMigErr.message);
   }
 }
 
