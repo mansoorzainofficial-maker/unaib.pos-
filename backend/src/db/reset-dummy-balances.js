@@ -1,3 +1,4 @@
+process.env.FORCE_SQLITE = 'true';
 const { getDb, initDb } = require('../config/db');
 
 function resetBalancesAndDummyData() {
@@ -37,21 +38,39 @@ function resetBalancesAndDummyData() {
   // 5. Reset product stock quantities to 0 (clean state awaiting fresh GRNs/purchases)
   db.exec('UPDATE products SET stock_quantity = 0;');
 
-  // 6. Reset SQLite auto-increment counters for fresh sequential numbering
+  // 6. Reset Financial Accounts & Accounts Ledger
+  try {
+    db.exec('DELETE FROM accounts_ledger;');
+    // Remove dummy bank accounts (Meezan, HBL) - leave only default Cash Counter
+    db.exec("DELETE FROM accounts WHERE type != 'cash' OR name LIKE '%Meezan%' OR name LIKE '%HBL%';");
+    db.exec('UPDATE accounts SET current_balance = 0.0;');
+  } catch (accErr) {
+    console.warn('Accounts reset notice:', accErr.message);
+  }
+
+  // 7. Retain only clean primary Admin user
+  try {
+    db.exec("DELETE FROM users WHERE username != 'admin';");
+  } catch (userErr) {
+    console.warn('Users reset notice:', userErr.message);
+  }
+
+  // 8. Reset SQLite auto-increment counters for fresh sequential numbering
   try {
     db.exec(`
       DELETE FROM sqlite_sequence WHERE name IN (
         'invoices', 'invoice_items', 'purchases', 'purchase_items',
         'sales_returns', 'sales_return_items', 'purchase_returns', 'purchase_return_items',
         'grn', 'grn_items', 'ledger_entries', 'transactions', 'expenses',
-        'cash_drawers', 'stock_alerts', 'warranty_claims', 'serial_numbers'
+        'cash_drawers', 'stock_alerts', 'warranty_claims', 'serial_numbers',
+        'accounts_ledger'
       );
     `);
   } catch (_) {}
 
   db.exec('COMMIT;');
 
-  // 7. Flush WAL checkpoint and vacuum database for compact size
+  // 9. Flush WAL checkpoint and vacuum database for compact size
   try {
     db.exec('PRAGMA wal_checkpoint(TRUNCATE);');
     db.exec('VACUUM;');
