@@ -76,6 +76,36 @@ async function createSaleReturn(req, res) {
         });
       }
 
+      // Resolve customer if customer_id not explicitly provided
+      let resolvedCustomerId = customer_id ? Number(customer_id) : null;
+      let resolvedCustomerName = customer_name ? customer_name.trim() : '';
+      let resolvedCustomerPhone = customer_phone ? customer_phone.trim() : null;
+
+      if (!resolvedCustomerId && resolvedCustomerPhone) {
+        const foundByPhone = await txGet('SELECT id, name, phone FROM customers WHERE phone = ?', [resolvedCustomerPhone]);
+        if (foundByPhone) {
+          resolvedCustomerId = foundByPhone.id;
+          if (!resolvedCustomerName) resolvedCustomerName = foundByPhone.name;
+        }
+      }
+
+      if (!resolvedCustomerId && resolvedCustomerName && resolvedCustomerName !== 'عام واک ان گاہک') {
+        const foundByName = await txGet('SELECT id, name, phone FROM customers WHERE LOWER(TRIM(name)) = LOWER(TRIM(?))', [resolvedCustomerName]);
+        if (foundByName) {
+          resolvedCustomerId = foundByName.id;
+          resolvedCustomerName = foundByName.name;
+          if (!resolvedCustomerPhone) resolvedCustomerPhone = foundByName.phone;
+        }
+      }
+
+      // STRICT VALIDATION for khata_credit:
+      // If cashier selects 'khata_credit' (کھاتے میں جمع), a valid registered customer is MANDATORY!
+      if (refund_mode === 'khata_credit' && !resolvedCustomerId) {
+        throw new Error(
+          'کھاتے میں جمع (Khata Credit) کرنے کے لیے ضروری ہے کہ گاہک سسٹم میں رجسٹرڈ ہو۔ براہ کرم لسٹ سے گاہک منتخب کریں یا پہلے نیا گاہک رجسٹر کریں۔'
+        );
+      }
+
       // Insert return header
       const returnInsert = await txRun(`
         INSERT INTO sales_returns (
@@ -87,9 +117,9 @@ async function createSaleReturn(req, res) {
         returnNumber,
         invoice_id || null,
         invoice_number || null,
-        customer_id || null,
-        customer_name || 'عام واک ان گاہک',
-        customer_phone || null,
+        resolvedCustomerId || null,
+        resolvedCustomerName || 'عام واک ان گاہک',
+        resolvedCustomerPhone || null,
         refund_mode || 'cash',
         totalRefund,
         reason || 'گاہک نے مال واپس کیا',
@@ -137,21 +167,21 @@ async function createSaleReturn(req, res) {
       }
 
       // Handle ledger adjustments
-      if (customer_id) {
+      if (resolvedCustomerId) {
         if (refund_mode === 'khata_credit') {
           // Reduce customer's outstanding balance
           await txRun('UPDATE customers SET current_balance = current_balance - ? WHERE id = ?', [
             totalRefund,
-            customer_id
+            resolvedCustomerId
           ]);
 
           await txRun(`
             INSERT INTO ledger_entries (
               party_type, party_id, entry_type, reference_id, reference_no,
               debit, credit, account_id, description, entry_date
-            ) VALUES ('client', ?, 'sale_return', ?, ?, 0, ?, NULL, ?, DATE('now'))
+            ) VALUES ('client', ?, 'sale_return', ?, ?, 0, ?, 1, ?, DATE('now'))
           `, [
-            customer_id,
+            resolvedCustomerId,
             returnId,
             returnNumber,
             totalRefund,
@@ -165,7 +195,7 @@ async function createSaleReturn(req, res) {
               debit, credit, account_id, description, entry_date
             ) VALUES ('client', ?, 'sale_return', ?, ?, 0, 0, 1, ?, DATE('now'))
           `, [
-            customer_id,
+            resolvedCustomerId,
             returnId,
             returnNumber,
             `Sale Return #${returnNumber} (Cash Refunded: Rs. ${totalRefund.toLocaleString()})`

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { useLanguage } from '../context/LanguageContext';
+import CustomerForm from '../components/CustomerForm';
 import {
   RotateCcw,
   Search,
@@ -15,7 +16,11 @@ import {
   History,
   Plus,
   Trash2,
-  RotateCw
+  RotateCw,
+  UserPlus,
+  X,
+  Building2,
+  Wallet
 } from 'lucide-react';
 
 export default function SaleReturnScreen() {
@@ -30,6 +35,10 @@ export default function SaleReturnScreen() {
   const [customerId, setCustomerId] = useState('');
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
+  const [customerSearchQuery, setCustomerSearchQuery] = useState('');
+  const [isCustomerDropdownOpen, setIsCustomerDropdownOpen] = useState(false);
+  const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
+
   const [refundMode, setRefundMode] = useState('cash'); // 'cash' or 'khata_credit'
   const [reason, setReason] = useState('خراب پرزہ / ڈیفیکٹو (Defective item)');
   
@@ -149,6 +158,28 @@ export default function SaleReturnScreen() {
     setReturnItems(returnItems.filter((_, idx) => idx !== index));
   };
 
+  const handleSelectCustomer = (cust) => {
+    if (!cust) {
+      setCustomerId('');
+      setCustomerName('');
+      setCustomerPhone('');
+      setCustomerSearchQuery('');
+    } else {
+      setCustomerId(cust.id);
+      setCustomerName(cust.name);
+      setCustomerPhone(cust.phone || '');
+      setCustomerSearchQuery(cust.name);
+    }
+    setIsCustomerDropdownOpen(false);
+  };
+
+  const handleCustomerCreated = (newCust) => {
+    if (!newCust) return;
+    setCustomersList(prev => [newCust, ...prev.filter(c => c.id !== newCust.id)]);
+    handleSelectCustomer(newCust);
+    setIsCustomerModalOpen(false);
+  };
+
   const calculateTotalRefund = () => {
     return returnItems.reduce((sum, item) => sum + (Number(item.quantity || 0) * Number(item.unit_price || 0)), 0);
   };
@@ -156,6 +187,16 @@ export default function SaleReturnScreen() {
   const handleSubmitReturn = async () => {
     if (returnItems.length === 0) {
       setErrorMsg(isUrdu ? 'براہ کرم واپسی کے لیے کم از کم ایک چیز منتخب کریں۔' : 'Please select at least one item to return.');
+      return;
+    }
+
+    // STRICT CHECK: Khata credit must have a registered customer
+    if (refundMode === 'khata_credit' && !customerId) {
+      setErrorMsg(
+        isUrdu
+          ? '⚠️ کھاتے میں جمع (Khata Credit) کرنے کے لیے ضروری ہے کہ آپ لسٹ سے گاہک منتخب کریں یا "+ نیا کسٹمر" بٹن سے نیا گاہک بنائیں۔'
+          : 'Khata Credit requires selecting a registered customer. Please search and select from the list, or add a new customer.'
+      );
       return;
     }
 
@@ -198,6 +239,8 @@ export default function SaleReturnScreen() {
         setCustomerName('');
         setCustomerPhone('');
         setCustomerId('');
+        setCustomerSearchQuery('');
+        setIsCustomerDropdownOpen(false);
 
         // Preload history so it's ready immediately
         loadHistory();
@@ -319,25 +362,140 @@ export default function SaleReturnScreen() {
 
           {/* Section 2: Customer & Refund Details */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-3">
-              <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                <User className="w-3.5 h-3.5 text-slate-400" />
-                <span>{isUrdu ? 'گاہک کا نام / فون:' : 'Customer Name / Phone:'}</span>
-              </label>
-              <input
-                type="text"
-                placeholder={isUrdu ? 'کسٹمر کا نام لکھیں...' : 'Customer name...'}
-                value={customerName}
-                onChange={(e) => setCustomerName(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:border-amber-500 focus:outline-none"
-              />
-              <input
-                type="text"
-                placeholder={isUrdu ? 'فون نمبر (اختیاری)...' : 'Phone number...'}
-                value={customerPhone}
-                onChange={(e) => setCustomerPhone(e.target.value)}
-                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:border-amber-500 focus:outline-none"
-              />
+            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-3 relative">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                  <User className="w-3.5 h-3.5 text-slate-400" />
+                  <span>{isUrdu ? 'گاہک کی تفصیل (Customer):' : 'Customer Details:'}</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setIsCustomerModalOpen(true)}
+                  className="text-[11px] font-bold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 px-2 py-1 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
+                >
+                  <UserPlus className="w-3 h-3" />
+                  <span>{isUrdu ? '+ نیا کسٹمر' : '+ New Customer'}</span>
+                </button>
+              </div>
+
+              {customerId ? (
+                /* Selected Customer Card */
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 relative">
+                  <button
+                    type="button"
+                    onClick={() => handleSelectCustomer(null)}
+                    className="absolute top-2 left-2 p-1 text-slate-400 hover:text-rose-600 rounded-lg hover:bg-white/80 transition-colors cursor-pointer"
+                    title={isUrdu ? 'تبدیل کریں' : 'Change customer'}
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                  <div className="flex items-center gap-2">
+                    <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold text-xs shrink-0">
+                      {customerName ? customerName.charAt(0).toUpperCase() : 'C'}
+                    </div>
+                    <div className="min-w-0 pr-6">
+                      <div className="font-bold text-xs text-slate-900 truncate">{customerName}</div>
+                      <div className="text-[11px] text-slate-500">{customerPhone || (isUrdu ? 'کوئی فون درج نہیں' : 'No Phone')}</div>
+                    </div>
+                  </div>
+                  <div className="mt-2 pt-2 border-t border-emerald-100 flex items-center justify-between text-[11px]">
+                    <span className="text-emerald-700 font-semibold flex items-center gap-1">
+                      <Wallet className="w-3 h-3" />
+                      {isUrdu ? 'موجودہ ادھار/بیلنس:' : 'Current Balance:'}
+                    </span>
+                    <span className="font-bold text-emerald-900">
+                      Rs. {Number(customersList.find(c => c.id === customerId)?.current_balance ?? 0).toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                /* Search & Select Input */
+                <div className="space-y-2">
+                  <div className="relative">
+                    <input
+                      type="text"
+                      placeholder={isUrdu ? 'کسٹمر کا نام یا فون تلاش کریں...' : 'Search customer by name or phone...'}
+                      value={customerSearchQuery}
+                      onChange={(e) => {
+                        setCustomerSearchQuery(e.target.value);
+                        setCustomerName(e.target.value);
+                        setIsCustomerDropdownOpen(true);
+                      }}
+                      onFocus={() => setIsCustomerDropdownOpen(true)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:border-amber-500 focus:outline-none"
+                    />
+
+                    {/* Autocomplete Dropdown */}
+                    {isCustomerDropdownOpen && (
+                      <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-xl z-30 max-h-48 overflow-y-auto">
+                        <div className="p-1.5 border-b border-slate-100 flex items-center justify-between text-[10px] text-slate-400 font-semibold px-2">
+                          <span>{isUrdu ? 'رجسٹرڈ کسٹمرز' : 'Registered Customers'}</span>
+                          <button
+                            type="button"
+                            onClick={() => setIsCustomerDropdownOpen(false)}
+                            className="hover:text-slate-600 cursor-pointer"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                        {customersList
+                          .filter(c => 
+                            !customerSearchQuery.trim() ||
+                            (c.name && c.name.toLowerCase().includes(customerSearchQuery.toLowerCase())) ||
+                            (c.phone && c.phone.includes(customerSearchQuery))
+                          )
+                          .slice(0, 10)
+                          .map(cust => (
+                            <div
+                              key={cust.id}
+                              onClick={() => handleSelectCustomer(cust)}
+                              className="p-2.5 hover:bg-amber-50 cursor-pointer border-b border-slate-50 last:border-0 flex items-center justify-between transition-colors"
+                            >
+                              <div>
+                                <div className="font-bold text-xs text-slate-800">{cust.name}</div>
+                                <div className="text-[10px] text-slate-400">{cust.phone || (isUrdu ? 'فون درج نہیں' : 'No Phone')}</div>
+                              </div>
+                              <div className="text-right">
+                                <span className="text-[10px] text-slate-400 block">{isUrdu ? 'کھاتہ' : 'Khata'}</span>
+                                <span className={`text-xs font-bold ${Number(cust.current_balance) > 0 ? 'text-rose-600' : 'text-slate-600'}`}>
+                                  Rs. {Number(cust.current_balance || 0).toLocaleString()}
+                                </span>
+                              </div>
+                            </div>
+                          ))}
+                        {customersList.filter(c => 
+                            !customerSearchQuery.trim() ||
+                            (c.name && c.name.toLowerCase().includes(customerSearchQuery.toLowerCase())) ||
+                            (c.phone && c.phone.includes(customerSearchQuery))
+                          ).length === 0 && (
+                          <div className="p-3 text-center text-xs text-slate-400">
+                            {isUrdu ? 'کوئی کسٹمر نہیں ملا' : 'No customer found'}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  <input
+                    type="text"
+                    placeholder={isUrdu ? 'فون نمبر (اختیاری)...' : 'Phone number (optional)...'}
+                    value={customerPhone}
+                    onChange={(e) => setCustomerPhone(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:border-amber-500 focus:outline-none"
+                  />
+
+                  {refundMode === 'khata_credit' && (
+                    <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-[11px] text-rose-800 flex items-start gap-1.5 font-medium leading-relaxed">
+                      <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0 mt-0.5" />
+                      <span>
+                        {isUrdu 
+                          ? '⚠️ کھاتے میں ریفنڈ کے لیے ضروری ہے کہ آپ اوپر لسٹ سے رجسٹرڈ گاہک منتخب کریں یا "+ نیا کسٹمر" بٹن دبائیں۔' 
+                          : '⚠️ Khata Credit requires selecting a registered customer from the list.'}
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-3">
@@ -663,6 +821,15 @@ export default function SaleReturnScreen() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Customer Quick Add Modal */}
+      {isCustomerModalOpen && (
+        <CustomerForm
+          isOpen={isCustomerModalOpen}
+          onClose={() => setIsCustomerModalOpen(false)}
+          onSuccess={handleCustomerCreated}
+        />
       )}
     </div>
   );
