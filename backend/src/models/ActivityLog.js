@@ -35,8 +35,14 @@ async function getLogs({ startDate, endDate, action, limit = 100, offset = 0 } =
   }
 
   if (action && action !== 'all') {
-    sql += ' AND action = ?';
-    params.push(action);
+    if (action === 'login') {
+      sql += " AND (action = 'login' OR action = 'auth_login')";
+    } else if (action === 'logout') {
+      sql += " AND (action = 'logout' OR action = 'auth_logout')";
+    } else {
+      sql += ' AND action = ?';
+      params.push(action);
+    }
   }
 
   sql += ' ORDER BY id DESC LIMIT ? OFFSET ?';

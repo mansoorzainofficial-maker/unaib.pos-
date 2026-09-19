@@ -91,12 +91,14 @@ export default function ActivityLogScreen() {
 
   const getActionBadge = (action) => {
     switch (action) {
+      case 'login':
       case 'auth_login':
         return {
           icon: UserCheck,
           label: isUrdu ? 'لاگ ان (Login)' : 'Login',
           bg: 'bg-emerald-50 text-emerald-700 border-emerald-200'
         };
+      case 'logout':
       case 'auth_logout':
         return {
           icon: LogOut,
@@ -161,7 +163,7 @@ export default function ActivityLogScreen() {
     let records = filteredLogs.length;
 
     filteredLogs.forEach(l => {
-      if (l.action === 'auth_login') logins++;
+      if (l.action === 'login' || l.action === 'auth_login') logins++;
       if (l.action === 'invoice_void' || l.action === 'purchase_void') voids++;
     });
 
@@ -277,8 +279,8 @@ export default function ActivityLogScreen() {
               className="text-xs font-medium text-slate-700 bg-transparent border-none outline-none cursor-pointer"
             >
               <option value="all">{isUrdu ? 'تمام ایکشنز (All Actions)' : 'All Actions'}</option>
-              <option value="auth_login">{isUrdu ? 'لاگ ان (Login)' : 'Login'}</option>
-              <option value="auth_logout">{isUrdu ? 'لاگ آؤٹ (Logout)' : 'Logout'}</option>
+              <option value="login">{isUrdu ? 'لاگ ان (Login)' : 'Login'}</option>
+              <option value="logout">{isUrdu ? 'لاگ آؤٹ (Logout)' : 'Logout'}</option>
               <option value="invoice_void">{isUrdu ? 'سیل بل منسوخی (Invoice Void)' : 'Invoice Void'}</option>
               <option value="purchase_void">{isUrdu ? 'خریداری منسوخی (Purchase Void)' : 'Purchase Void'}</option>
               <option value="customer_create">{isUrdu ? 'نیا گاہک (New Customer)' : 'New Customer'}</option>
