@@ -43,6 +43,15 @@ async function getFinancialSummary(req, res) {
       WHERE status = 'completed' AND ${dateFilter}
     `, params);
 
+    // 1b. Sales Returns in the same period
+    const returnStats = await get(`
+      SELECT
+        COUNT(*) as total_returns_count,
+        COALESCE(SUM(total_refund_amount), 0) as total_returns_amount
+      FROM sales_returns
+      WHERE ${dateFilter}
+    `, params);
+
     // 2. Cost of Goods Sold (COGS) for completed sales
     let cogsDateFilter = dateFilter.replace(/created_at/g, 'inv.created_at');
     const cogsStats = await get(`
@@ -53,6 +62,17 @@ async function getFinancialSummary(req, res) {
       WHERE inv.status = 'completed' AND ${cogsDateFilter}
     `, params);
 
+    // 2b. Returned Goods Cost to restore COGS
+    let returnCogsDateFilter = dateFilter.replace(/created_at/g, 'sr.created_at');
+    const returnCogsStats = await get(`
+      SELECT
+        COALESCE(SUM(p.cost_price * sri.quantity), 0) as total_return_cogs
+      FROM sales_return_items sri
+      JOIN sales_returns sr ON sri.sales_return_id = sr.id
+      JOIN products p ON sri.product_id = p.id
+      WHERE ${returnCogsDateFilter}
+    `, params);
+
     // 3. Operating Expenses in the same period
     let expenseDateFilter = dateFilter.replace(/created_at/g, 'expense_date');
     const expenseStats = await get(`
@@ -60,6 +80,25 @@ async function getFinancialSummary(req, res) {
         COALESCE(SUM(amount), 0) as total_expenses
       FROM expenses
       WHERE ${expenseDateFilter}
+    `, params);
+
+    // 3b. Purchases in the same period
+    let purDateFilter = dateFilter.replace(/created_at/g, 'purchase_date');
+    const purchaseStats = await get(`
+      SELECT
+        COUNT(*) as total_purchases_count,
+        COALESCE(SUM(grand_total), 0) as total_purchases_amount
+      FROM purchases
+      WHERE ${purDateFilter}
+    `, params);
+
+    // 3c. Purchase Returns in the same period
+    const purchaseReturnStats = await get(`
+      SELECT
+        COUNT(*) as total_purchase_returns_count,
+        COALESCE(SUM(total_amount), 0) as total_purchase_returns_amount
+      FROM purchase_returns
+      WHERE ${dateFilter}
     `, params);
 
     // 4. Payment Methods Breakdown
@@ -73,13 +112,19 @@ async function getFinancialSummary(req, res) {
       GROUP BY payment_method
     `, params);
 
-    // 5. Calculate Gross Profit & Net Profit
-    const revenue = Number(salesStats?.total_revenue) || 0;
-    const cogs = Number(cogsStats?.total_cogs) || 0;
-    const grossProfit = revenue - cogs;
+    // 5. Calculate Net Revenue, Net COGS, Gross Profit & Net Profit
+    const grossRevenue = Number(salesStats?.total_revenue) || 0;
+    const totalReturns = Number(returnStats?.total_returns_amount) || 0;
+    const netRevenue = Math.max(0, grossRevenue - totalReturns);
+
+    const grossCogs = Number(cogsStats?.total_cogs) || 0;
+    const returnCogs = Number(returnCogsStats?.total_return_cogs) || 0;
+    const netCogs = Math.max(0, grossCogs - returnCogs);
+
+    const grossProfit = netRevenue - netCogs;
     const expenses = Number(expenseStats?.total_expenses) || 0;
     const netProfit = grossProfit - expenses;
-    const profitMargin = revenue > 0 ? ((netProfit / revenue) * 100).toFixed(2) : 0;
+    const profitMargin = netRevenue > 0 ? ((netProfit / netRevenue) * 100).toFixed(2) : 0;
 
     // 6. Top Selling Accessories in Period
     const topProducts = await query(`
@@ -96,8 +141,8 @@ async function getFinancialSummary(req, res) {
       LIMIT 5
     `, params);
 
-    // 7. Recent Daily Sales Trend (for chart)
-    const dailyTrend = await query(`
+    // 7. Recent Daily Sales Trend (Net of returns)
+    const dailyInvoicesTrend = await query(`
       SELECT
         DATE(created_at) as sale_date,
         COUNT(*) as order_count,
@@ -109,19 +154,57 @@ async function getFinancialSummary(req, res) {
       LIMIT 14
     `);
 
+    const dailyReturnsTrend = await query(`
+      SELECT
+        DATE(created_at) as return_date,
+        COALESCE(SUM(total_refund_amount), 0) as daily_returns
+      FROM sales_returns
+      GROUP BY DATE(created_at)
+    `);
+
+    const returnTrendMap = {};
+    (dailyReturnsTrend || []).forEach(r => {
+      const d = String(r.return_date).slice(0, 10);
+      returnTrendMap[d] = Number(r.daily_returns) || 0;
+    });
+
+    const dailyTrend = (dailyInvoicesTrend || []).map(row => {
+      const d = String(row.sale_date).slice(0, 10);
+      const ret = returnTrendMap[d] || 0;
+      const net = Math.max(0, (Number(row.daily_revenue) || 0) - ret);
+      return {
+        ...row,
+        daily_revenue: net,
+        daily_gross: Number(row.daily_revenue) || 0,
+        daily_returns: ret
+      };
+    });
+
+    const grossPurchases = Number(purchaseStats?.total_purchases_amount) || 0;
+    const totalPurchaseReturns = Number(purchaseReturnStats?.total_purchase_returns_amount) || 0;
+    const netPurchases = Math.max(0, grossPurchases - totalPurchaseReturns);
+
     return res.json({
       success: true,
       period,
       summary: {
         total_invoices: Number(salesStats?.total_invoices) || 0,
-        total_revenue: revenue,
-        total_cogs: cogs,
+        gross_revenue: grossRevenue,
+        total_returns: totalReturns,
+        total_return_count: Number(returnStats?.total_returns_count) || 0,
+        total_revenue: netRevenue,
+        total_cogs: netCogs,
         gross_profit: grossProfit,
         total_expenses: expenses,
         net_profit: netProfit,
         profit_margin: Number(profitMargin),
         total_discount: Number(salesStats?.total_discount) || 0,
-        total_tax: Number(salesStats?.total_tax) || 0
+        total_tax: Number(salesStats?.total_tax) || 0,
+        total_purchases_count: Number(purchaseStats?.total_purchases_count) || 0,
+        gross_purchases: grossPurchases,
+        total_purchase_returns: totalPurchaseReturns,
+        total_purchase_return_count: Number(purchaseReturnStats?.total_purchase_returns_count) || 0,
+        net_purchases: netPurchases
       },
       payment_breakdown: paymentBreakdown,
       top_products: topProducts,

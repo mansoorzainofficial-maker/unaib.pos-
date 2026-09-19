@@ -14,7 +14,8 @@ import {
   Printer,
   History,
   Plus,
-  Trash2
+  Trash2,
+  RotateCw
 } from 'lucide-react';
 
 export default function SaleReturnScreen() {
@@ -197,6 +198,9 @@ export default function SaleReturnScreen() {
         setCustomerName('');
         setCustomerPhone('');
         setCustomerId('');
+
+        // Preload history so it's ready immediately
+        loadHistory();
       } else {
         setErrorMsg(res.message || 'Error creating sale return');
       }
@@ -515,10 +519,24 @@ export default function SaleReturnScreen() {
         <div className="flex-1 overflow-y-auto p-6">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
             <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-              <h2 className="text-xs font-bold text-slate-800">
-                {isUrdu ? 'گزشتہ سیل واپسی ریکارڈ (Recent Sale Returns)' : 'Recent Sale Returns'}
-              </h2>
-              <span className="text-xs text-slate-400 font-bold">{historyList.length} Returns</span>
+              <div className="flex items-center gap-2">
+                <h2 className="text-xs font-bold text-slate-800">
+                  {isUrdu ? 'گزشتہ سیل واپسی ریکارڈ (Recent Sale Returns)' : 'Recent Sale Returns'}
+                </h2>
+                <span className="text-[10px] bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full font-bold">
+                  {historyList.length} {isUrdu ? 'ریکارڈز' : 'Returns'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={loadHistory}
+                disabled={loadingHistory}
+                className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                title={isUrdu ? 'فہرست تازہ کریں' : 'Refresh List'}
+              >
+                <RotateCw className={`w-3.5 h-3.5 ${loadingHistory ? 'animate-spin' : ''}`} />
+                <span>{isUrdu ? 'ریفریش' : 'Refresh'}</span>
+              </button>
             </div>
 
             {loadingHistory ? (
@@ -608,21 +626,39 @@ export default function SaleReturnScreen() {
               </div>
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex flex-col gap-2 pt-2">
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="flex-1 py-2.5 bg-slate-900 hover:bg-black text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>{isUrdu ? 'پرنٹ رسید' : 'Print Slip'}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSuccessModal(null);
+                    setActiveTab('history');
+                    loadHistory();
+                  }}
+                  className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>{isUrdu ? 'ہسٹری میں دیکھیں' : 'View in History'}</span>
+                </button>
+              </div>
               <button
                 type="button"
-                onClick={() => window.print()}
-                className="flex-1 py-2.5 bg-slate-900 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                onClick={() => {
+                  setSuccessModal(null);
+                  setActiveTab('history');
+                  loadHistory();
+                }}
+                className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold cursor-pointer"
               >
-                <Printer className="w-3.5 h-3.5" />
-                <span>{isUrdu ? 'پرنٹ رسید' : 'Print Slip'}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setSuccessModal(null)}
-                className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold cursor-pointer"
-              >
-                {isUrdu ? 'بند کریں' : 'Close'}
+                {isUrdu ? 'مکمل کریں اور بند کریں' : 'Done & Close'}
               </button>
             </div>
           </div>

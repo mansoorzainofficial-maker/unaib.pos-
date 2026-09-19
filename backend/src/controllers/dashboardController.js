@@ -20,6 +20,15 @@ async function getDashboardOverview(req, res) {
       WHERE status = 'completed' AND DATE(created_at) = DATE(?)
     `, [todayStr]);
 
+    // 1b. Today's Total Sales Returns
+    const todayReturnsPromise = get(`
+      SELECT
+        COUNT(*) as today_returns_count,
+        COALESCE(SUM(total_refund_amount), 0) as today_returns_amount
+      FROM sales_returns
+      WHERE DATE(created_at) = DATE(?)
+    `, [todayStr]);
+
     // 2. Cash Drawer Status (Active Shift)
     const drawerPromise = get(`
       SELECT
@@ -55,6 +64,16 @@ async function getDashboardOverview(req, res) {
       ORDER BY DATE(created_at) ASC
     `, [sevenDaysAgoStr]);
 
+    // 4b. Last 7 Days Daily Sales Returns
+    const dailyReturnsPromise = query(`
+      SELECT
+        DATE(created_at) as return_date,
+        COALESCE(SUM(total_refund_amount), 0) as daily_returns
+      FROM sales_returns
+      WHERE DATE(created_at) >= DATE(?)
+      GROUP BY DATE(created_at)
+    `, [sevenDaysAgoStr]);
+
     // 5. Top 5 Products Sold This Week (Quantity-wise)
     const topProductsPromise = query(`
       SELECT
@@ -86,30 +105,43 @@ async function getDashboardOverview(req, res) {
     // Execute all parallel queries concurrently in ~15ms
     const [
       todayStats,
+      todayReturns,
       drawer,
       lowStock,
       dailyTrendRows,
+      dailyReturnsRows,
       topProducts,
       customerKhata,
       supplierPayable
     ] = await Promise.all([
       todayStatsPromise,
+      todayReturnsPromise,
       drawerPromise,
       lowStockPromise,
       dailyTrendPromise,
+      dailyReturnsPromise,
       topProductsPromise,
       customerKhataPromise,
       supplierPayablePromise
     ]);
+
+    // Build return lookup map by date
+    const returnsTrendMap = {};
+    (dailyReturnsRows || []).forEach(r => {
+      const d = String(r.return_date).slice(0, 10);
+      returnsTrendMap[d] = Number(r.daily_returns) || 0;
+    });
 
     // Build guaranteed 7-day calendar trend (even if 0 sales on some days)
     const trendMap = {};
     (dailyTrendRows || []).forEach(r => {
       // Normalise date string to YYYY-MM-DD
       const d = String(r.sale_date).slice(0, 10);
+      const dayReturns = returnsTrendMap[d] || 0;
+      const netDailySales = Math.max(0, (Number(r.daily_revenue) || 0) - dayReturns);
       trendMap[d] = {
         orders: Number(r.order_count) || 0,
-        sales: Math.round(Number(r.daily_revenue) || 0)
+        sales: Math.round(netDailySales)
       };
     });
 
@@ -139,12 +171,18 @@ async function getDashboardOverview(req, res) {
       });
     }
 
+    const grossTodaySales = Number(todayStats?.today_sales) || 0;
+    const todayReturnsAmount = Number(todayReturns?.today_returns_amount) || 0;
+    const netTodaySales = Math.max(0, grossTodaySales - todayReturnsAmount);
+
     // Format final aggregated response
     return res.json({
       success: true,
       data: {
         summary: {
-          today_sales: Math.round(Number(todayStats?.today_sales) || 0),
+          today_sales: Math.round(netTodaySales),
+          today_gross_sales: Math.round(grossTodaySales),
+          today_returns: Math.round(todayReturnsAmount),
           today_invoices: Number(todayStats?.today_invoices) || 0,
           drawer: {
             isOpen: Boolean(drawer && drawer.status === 'open'),

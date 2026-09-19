@@ -294,6 +294,18 @@ export default function InvoicesHistoryScreen() {
                         >
                           {isUrdu ? 'منسوخ (Void)' : 'VOIDED'}
                         </span>
+                      ) : Number(inv.total_refunded) > 0 ? (
+                        <div className="flex flex-col gap-0.5 items-start">
+                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1 shadow-2xs">
+                            <span>🔄</span>
+                            <span>{Number(inv.total_refunded) >= Number(inv.grand_total)
+                              ? (isUrdu ? 'واپسی شدہ' : 'Returned')
+                              : (isUrdu ? 'جزوی واپسی' : 'Partial Return')}</span>
+                          </span>
+                          <span className="text-[9px] text-amber-700 font-mono font-semibold">
+                            -Rs. {Math.round(Number(inv.total_refunded)).toLocaleString()}
+                          </span>
+                        </div>
                       ) : (
                         <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
                           {isUrdu ? 'فعال / درست' : 'Active'}
@@ -327,7 +339,12 @@ export default function InvoicesHistoryScreen() {
                         : inv.payment_method}
                     </td>
                     <td className="py-2.5 px-2 text-right font-mono font-bold text-slate-900">
-                      Rs. {inv.grand_total?.toLocaleString()}
+                      <div>Rs. {inv.grand_total?.toLocaleString()}</div>
+                      {Number(inv.total_refunded) > 0 && (
+                        <div className="text-[10px] text-amber-700 font-semibold font-mono">
+                          {isUrdu ? 'خالص: ' : 'Net: '}Rs. {Math.max(0, (Number(inv.grand_total) || 0) - Number(inv.total_refunded)).toLocaleString()}
+                        </div>
+                      )}
                     </td>
                     <td className="py-2.5 pr-3 text-right">
                       <div className="inline-flex items-center space-x-1.5">

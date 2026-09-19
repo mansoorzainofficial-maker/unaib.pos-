@@ -467,10 +467,19 @@ async function createInvoice(req, res) {
 async function getFullInvoiceDetails(invoiceId) {
   const invoice = await get(`
     SELECT inv.*, u.full_name as cashier_name,
-           c.current_balance as live_customer_balance
+           c.current_balance as live_customer_balance,
+           COALESCE(sr_agg.total_refunded, 0) as total_refunded,
+           COALESCE(sr_agg.return_count, 0) as return_count
     FROM invoices inv
     LEFT JOIN users u ON inv.cashier_id = u.id
     LEFT JOIN customers c ON inv.customer_id = c.id
+    LEFT JOIN (
+      SELECT invoice_id,
+             SUM(total_refund_amount) as total_refunded,
+             COUNT(*) as return_count
+      FROM sales_returns
+      GROUP BY invoice_id
+    ) sr_agg ON sr_agg.invoice_id = inv.id
     WHERE inv.id = ?
   `, [invoiceId]);
 
@@ -531,9 +540,18 @@ async function getInvoices(req, res) {
     const { search, start_date, end_date, limit = 50 } = req.query;
 
     let sql = `
-      SELECT inv.*, u.full_name as cashier_name
+      SELECT inv.*, u.full_name as cashier_name,
+             COALESCE(sr_agg.total_refunded, 0) as total_refunded,
+             COALESCE(sr_agg.return_count, 0) as return_count
       FROM invoices inv
       LEFT JOIN users u ON inv.cashier_id = u.id
+      LEFT JOIN (
+        SELECT invoice_id,
+               SUM(total_refund_amount) as total_refunded,
+               COUNT(*) as return_count
+        FROM sales_returns
+        GROUP BY invoice_id
+      ) sr_agg ON sr_agg.invoice_id = inv.id
       WHERE 1=1
     `;
     const params = [];
