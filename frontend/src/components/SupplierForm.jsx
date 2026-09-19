@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, CheckCircle2, Loader2, Building, User, Phone, Mail, MapPin } from 'lucide-react';
+import { X, CheckCircle2, Loader2, Building, User, Phone, Mail, MapPin, Wallet } from 'lucide-react';
 import { supplierApi } from '../services/supplierApi';
 import { useLanguage } from '../context/LanguageContext';
 
@@ -15,7 +15,8 @@ export default function SupplierForm({
     contact_person: '',
     phone: '',
     email: '',
-    address: ''
+    address: '',
+    opening_balance: 0
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -27,7 +28,8 @@ export default function SupplierForm({
         contact_person: supplier.contact_person || '',
         phone: supplier.phone || '',
         email: supplier.email || '',
-        address: supplier.address || ''
+        address: supplier.address || '',
+        opening_balance: supplier.current_balance || supplier.total_due || 0
       });
     } else {
       setFormData({
@@ -35,7 +37,8 @@ export default function SupplierForm({
         contact_person: '',
         phone: '',
         email: '',
-        address: ''
+        address: '',
+        opening_balance: 0
       });
     }
     setErrorMsg('');
@@ -150,6 +153,26 @@ export default function SupplierForm({
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                 placeholder={t('supplier_ph_email')}
                 className="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-xl text-slate-900 font-mono focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-hidden"
+              />
+            </div>
+          </div>
+
+          {/* Opening Balance / Previous Payable */}
+          <div>
+            <label className="block font-bold text-slate-800 mb-1 flex items-center justify-between">
+              <span>{isUrdu ? 'پچھلا بقایا / اوپننگ بیلنس (Rs.)' : 'Opening Balance / Payable (Rs.)'}</span>
+              <span className="text-[10px] text-slate-400">{isUrdu ? 'اگر سپلائر کو پہلے سے رقم دینی ہو' : 'If amount already payable'}</span>
+            </label>
+            <div className="relative">
+              <Wallet className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+              <input
+                type="number"
+                min="0"
+                step="any"
+                value={formData.opening_balance}
+                onChange={(e) => setFormData({ ...formData, opening_balance: e.target.value })}
+                placeholder="0"
+                className="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-xl text-slate-900 font-mono font-bold focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-hidden"
               />
             </div>
           </div>

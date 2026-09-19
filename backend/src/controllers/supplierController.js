@@ -1,4 +1,5 @@
 const Supplier = require('../models/Supplier');
+const { run } = require('../config/db');
 const { logActivity } = require('../models/ActivityLog');
 
 /**
@@ -58,7 +59,7 @@ async function getSupplierById(req, res) {
  */
 async function createSupplier(req, res) {
   try {
-    const { name, contact_person, phone, email, address } = req.body;
+    const { name, contact_person, phone, email, address, opening_balance } = req.body;
 
     if (!name || !name.trim()) {
       return res.status(400).json({
@@ -67,20 +68,30 @@ async function createSupplier(req, res) {
       });
     }
 
+    const openBal = Number(opening_balance) || 0;
+
     const newSupplier = await Supplier.create({
       name: name.trim(),
       contact_person: contact_person ? contact_person.trim() : null,
       phone: phone ? phone.trim() : null,
       email: email ? email.trim() : null,
       address: address ? address.trim() : null,
-      total_due: 0.0
+      total_due: openBal
     });
+
+    if (openBal > 0) {
+      await run(`
+        INSERT INTO ledger_entries (
+          party_type, party_id, entry_type, debit, credit, description, entry_date
+        ) VALUES ('supplier', ?, 'opening_balance', ?, 0, 'Opening Balance (Previous Payable)', DATE('now'))
+      `, [newSupplier.id, openBal]);
+    }
 
     await logActivity({
       userId: req.user ? req.user.id : null,
       username: req.user ? req.user.username : 'Admin',
       action: 'supplier_create',
-      description: `نیا سپلائر رجسٹرڈ: ${name.trim()} (${phone ? phone.trim() : 'کوئی فون نہیں'})`
+      description: `نیا سپلائر رجسٹرڈ: ${name.trim()} (${phone ? phone.trim() : 'کوئی فون نہیں'})${openBal > 0 ? ` (ابتدائی بقایا: Rs. ${openBal})` : ''}`
     });
 
     res.status(201).json({
