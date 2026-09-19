@@ -1,6 +1,6 @@
 const crypto = require('crypto');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'unaib_pos_secure_desktop_secret_2026';
+const JWT_SECRET = process.env.JWT_SECRET || 'unaib_pos_prod_v2_secure_secret_2026';
 
 /**
  * Hash a password using scrypt with random salt
