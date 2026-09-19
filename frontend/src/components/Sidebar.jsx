@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import {
@@ -22,6 +22,22 @@ export default function Sidebar({ currentTab, setTab }) {
   const { isAdmin } = useAuth();
   const { t, isUrdu } = useLanguage();
   const [dbLabel, setDbLabel] = useState(() => (navigator.onLine ? '' : 'SQLite (Local)'));
+  const secretClicks = useRef(0);
+  const secretTimer = useRef(null);
+
+  const handleSecretClick = () => {
+    if (!isAdmin) return;
+    secretClicks.current += 1;
+    clearTimeout(secretTimer.current);
+    if (secretClicks.current >= 3) {
+      setTab('activity_log');
+      secretClicks.current = 0;
+    } else {
+      secretTimer.current = setTimeout(() => {
+        secretClicks.current = 0;
+      }, 1500);
+    }
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -86,8 +102,7 @@ export default function Sidebar({ currentTab, setTab }) {
     { id: 'accounts', label: t('nav_accounts'), icon: Landmark },
     { id: 'expenses', label: t('nav_expenses'), icon: CreditCard },
     ...(isAdmin ? [
-      { id: 'reports', label: t('nav_reports'), icon: BarChart3, adminOnly: true },
-      { id: 'activity_log', label: t('nav_activity_logs'), icon: History, adminOnly: true }
+      { id: 'reports', label: t('nav_reports'), icon: BarChart3, adminOnly: true }
     ] : [])
   ];
 
@@ -167,9 +182,13 @@ export default function Sidebar({ currentTab, setTab }) {
           </button>
         )}
 
-        <div className="px-2.5 py-1.5 bg-slate-50/80 rounded-lg text-[10px] text-slate-500 flex justify-between items-center gap-1">
+        <div
+          onClick={handleSecretClick}
+          className="px-2.5 py-1.5 bg-slate-50/80 rounded-lg text-[10px] text-slate-500 flex justify-between items-center gap-1 select-none cursor-default"
+          title={dbLabel ? `v1.0.0 (${dbLabel})` : 'v1.0.0'}
+        >
           <span className="font-medium text-slate-400 shrink-0">System</span>
-          <span className="font-mono font-bold text-slate-700 truncate text-[9.5px]" title={dbLabel ? `v1.0.0 (${dbLabel})` : 'v1.0.0'}>
+          <span className="font-mono font-bold text-slate-700 truncate text-[9.5px]">
             v1.0.0 {dbLabel ? `(${dbLabel})` : ''}
           </span>
         </div>

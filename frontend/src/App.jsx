@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from './context/AuthContext';
 import { useLanguage } from './context/LanguageContext';
 import Navbar from './components/Navbar';
@@ -31,6 +31,32 @@ export default function App() {
   const [ledgerPartyId, setLedgerPartyId] = useState(null);
   const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
   const [lowStockCount, setLowStockCount] = useState(0);
+
+  // Secret access triggers for Audit Trail (Completely hidden from client)
+  useEffect(() => {
+    const checkHash = () => {
+      const h = window.location.hash.toLowerCase();
+      if (h === '#audit' || h === '#logs' || h === '#activity') {
+        if (isAdmin) setCurrentTab('activity_log');
+      }
+    };
+    checkHash();
+    window.addEventListener('hashchange', checkHash);
+
+    const handleKeyDown = (e) => {
+      // Secret key combination: Ctrl + Shift + A or Ctrl + Shift + L
+      if (e.ctrlKey && e.shiftKey && (e.key === 'A' || e.key === 'a' || e.key === 'L' || e.key === 'l')) {
+        e.preventDefault();
+        if (isAdmin) setCurrentTab('activity_log');
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      window.removeEventListener('hashchange', checkHash);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isAdmin]);
 
   if (loading) {
     return (
