@@ -17,6 +17,7 @@ export const translations = {
     cashier_role: 'کیشیئر / ملازم',
 
     // Sidebar Items
+    nav_dashboard: 'ڈیش بورڈ (خلاصہ)',
     nav_pos: 'نیا بل / کاؤنٹر سیل',
     nav_invoices: 'بلوں کی ہسٹری',
     nav_inventory: 'سامان کا اسٹاک',
@@ -413,6 +414,7 @@ export const translations = {
     cashier_role: 'Cashier',
 
     // Sidebar Items
+    nav_dashboard: 'Dashboard',
     nav_pos: 'Cash Billing (POS)',
     nav_invoices: 'Bills & Invoices',
     nav_inventory: 'Inventory & Stock',

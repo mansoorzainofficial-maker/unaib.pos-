@@ -15,7 +15,8 @@ import {
   Store,
   RotateCcw,
   Building2,
-  History
+  History,
+  LayoutDashboard
 } from 'lucide-react';
 
 export default function Sidebar({ currentTab, setTab }) {
@@ -90,6 +91,7 @@ export default function Sidebar({ currentTab, setTab }) {
   }, []);
 
   const mainNavItems = [
+    { id: 'dashboard', label: t('nav_dashboard'), icon: LayoutDashboard },
     { id: 'pos', label: t('nav_pos'), icon: ShoppingCart },
     { id: 'sale_return', label: t('nav_sale_return'), icon: RotateCcw },
     { id: 'invoices', label: t('nav_invoices'), icon: Receipt },

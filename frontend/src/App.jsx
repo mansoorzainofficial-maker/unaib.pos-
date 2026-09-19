@@ -20,13 +20,14 @@ import SaleReturnScreen from './pages/SaleReturnScreen';
 import PurchaseReturnScreen from './pages/PurchaseReturnScreen';
 import AccountsScreen from './pages/AccountsScreen';
 import ActivityLogScreen from './pages/ActivityLogScreen';
+import DashboardScreen from './pages/DashboardScreen';
 import LoginScreen from './pages/LoginScreen';
 import CashDrawerModal from './pages/CashDrawerModal';
 
 export default function App() {
   const { user, loading, isAdmin } = useAuth();
   const { t, isUrdu } = useLanguage();
-  const [currentTab, setCurrentTab] = useState('pos');
+  const [currentTab, setCurrentTab] = useState('dashboard');
   const [ledgerPartyType, setLedgerPartyType] = useState('supplier');
   const [ledgerPartyId, setLedgerPartyId] = useState(null);
   const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
@@ -93,6 +94,9 @@ export default function App() {
         />
 
         <main className="flex-1 flex overflow-hidden relative">
+          {activeTabSafe === 'dashboard' && (
+            <DashboardScreen onNavigate={setCurrentTab} />
+          )}
           {activeTabSafe === 'pos' && (
             <POSScreen onLowStockChange={setLowStockCount} />
           )}

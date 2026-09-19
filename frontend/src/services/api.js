@@ -310,5 +310,10 @@ export const api = {
   // Activity Logs / Audit Trail
   activityLogs: {
     getAll: (params = {}) => request(`/activity-logs${buildQuery(params)}`)
+  },
+
+  // Dashboard Landing
+  dashboard: {
+    getOverview: () => request('/dashboard')
   }
 };
