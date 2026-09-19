@@ -20,6 +20,7 @@ const returnRoutes = require('./routes/returnRoutes');
 const supplierRoutes = require('./routes/supplierRoutes');
 const grnRoutes = require('./routes/grnRoutes');
 const accountRoutes = require('./routes/accountRoutes');
+const activityLogRoutes = require('./routes/activityLogRoutes');
 const backupService = require('./services/backupService');
 
 const app = express();
@@ -95,6 +96,7 @@ app.use('/api/returns', returnRoutes);
 app.use('/api/suppliers', supplierRoutes);
 app.use('/api/grn', grnRoutes);
 app.use('/api/accounts', accountRoutes);
+app.use('/api/activity-logs', activityLogRoutes);
 
 // Graceful shutdown backup and unhandled errors protection
 let isShuttingDown = false;

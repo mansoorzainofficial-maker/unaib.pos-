@@ -1,5 +1,6 @@
 const { get, query, run } = require('../config/db');
 const { verifyPassword, hashPassword, signToken } = require('../utils/authUtils');
+const { logActivity } = require('../models/ActivityLog');
 
 /**
  * Login with username/password OR fast 4-digit PIN
@@ -20,6 +21,13 @@ async function login(req, res) {
         username: user.username,
         full_name: user.full_name,
         role: user.role
+      });
+
+      await logActivity({
+        userId: user.id,
+        username: user.username,
+        action: 'login',
+        description: `لاگ ان بذریعہ پن (Quick PIN Login - ${user.full_name || user.username})`
       });
 
       return res.json({
@@ -54,6 +62,13 @@ async function login(req, res) {
       username: user.username,
       full_name: user.full_name,
       role: user.role
+    });
+
+    await logActivity({
+      userId: user.id,
+      username: user.username,
+      action: 'login',
+      description: `لاگ ان بذریعہ پاس ورڈ (Password Login - ${user.full_name || user.username})`
     });
 
     return res.json({
@@ -161,8 +176,28 @@ async function updateUser(req, res) {
   }
 }
 
+/**
+ * Handle user logout and log event
+ */
+async function logout(req, res) {
+  try {
+    if (req.user) {
+      await logActivity({
+        userId: req.user.id,
+        username: req.user.username,
+        action: 'logout',
+        description: `لاگ آؤٹ سیشن اختتام (User Logout - ${req.user.full_name || req.user.username})`
+      });
+    }
+    return res.json({ success: true, message: 'Logged out successfully' });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
 module.exports = {
   login,
+  logout,
   getMe,
   getUsers,
   createUser,

@@ -29,6 +29,7 @@ export const translations = {
     nav_drawer: 'دکان کا گلہ (کیش)',
     nav_expenses: 'دکان کے خرچے',
     nav_reports: 'منافع و مالی رپورٹس',
+    nav_activity_logs: 'آڈٹ ٹریل (ایکٹیویٹی لاگ)',
     nav_settings: 'سسٹم سیٹنگز',
 
     // POS Screen - Front Counter
@@ -424,6 +425,7 @@ export const translations = {
     nav_drawer: 'Cash Drawer',
     nav_expenses: 'Shop Expenses',
     nav_reports: 'Financial Reports',
+    nav_activity_logs: 'Activity Audit Log',
     nav_settings: 'System Settings',
 
     // POS Screen - Front Counter

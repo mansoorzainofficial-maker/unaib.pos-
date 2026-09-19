@@ -1,4 +1,5 @@
 const { query, get, run, transaction } = require('../config/db');
+const { logActivity } = require('../models/ActivityLog');
 
 /**
  * Get all shop settings
@@ -31,6 +32,13 @@ async function updateSettings(req, res) {
           ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value
         `, [key, String(value)]);
       }
+    });
+
+    await logActivity({
+      userId: req.user ? req.user.id : null,
+      username: req.user ? req.user.username : 'Admin',
+      action: 'settings_update',
+      description: `دکان کی ترتیبات (Settings) تبدیل کر دی گئیں: ${Object.keys(settingsObj).join(', ')}`
     });
 
     return res.json({ success: true, message: 'Settings updated successfully' });

@@ -46,6 +46,7 @@ export const api = {
   // Authentication
   auth: {
     login: (credentials) => request('/auth/login', { method: 'POST', body: JSON.stringify(credentials) }),
+    logout: () => request('/auth/logout', { method: 'POST' }),
     getMe: () => request('/auth/me'),
     getUsers: () => request('/auth/users'),
     createUser: (userData) => request('/auth/users', { method: 'POST', body: JSON.stringify(userData) }),
@@ -304,5 +305,10 @@ export const api = {
     createSaleReturn: (data) => request('/returns/sale', { method: 'POST', body: JSON.stringify(data) }),
     getPurchaseReturns: () => request('/returns/purchase'),
     createPurchaseReturn: (data) => request('/returns/purchase', { method: 'POST', body: JSON.stringify(data) })
+  },
+
+  // Activity Logs / Audit Trail
+  activityLogs: {
+    getAll: (params = {}) => request(`/activity-logs${buildQuery(params)}`)
   }
 };

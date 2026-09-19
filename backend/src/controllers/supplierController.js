@@ -1,4 +1,5 @@
 const Supplier = require('../models/Supplier');
+const { logActivity } = require('../models/ActivityLog');
 
 /**
  * Get all suppliers
@@ -73,6 +74,13 @@ async function createSupplier(req, res) {
       email: email ? email.trim() : null,
       address: address ? address.trim() : null,
       total_due: 0.0
+    });
+
+    await logActivity({
+      userId: req.user ? req.user.id : null,
+      username: req.user ? req.user.username : 'Admin',
+      action: 'supplier_create',
+      description: `نیا سپلائر رجسٹرڈ: ${name.trim()} (${phone ? phone.trim() : 'کوئی فون نہیں'})`
     });
 
     res.status(201).json({

@@ -1,4 +1,5 @@
 const { query, get, run, transaction } = require('../config/db');
+const { logActivity } = require('../models/ActivityLog');
 
 /**
  * Generate unique Purchase Order Number (e.g. PUR-20260909-0001)
@@ -466,6 +467,13 @@ async function voidPurchase(req, res) {
         purchase_number: purchase.purchase_number,
         void_reason: voidReason
       };
+    });
+
+    await logActivity({
+      userId: voidedBy,
+      username: req.user ? req.user.username : 'Admin',
+      action: 'purchase_void',
+      description: `خریداری بل منسوخ: #${result.purchase_number} - وجہ: ${result.void_reason}`
     });
 
     return res.json({

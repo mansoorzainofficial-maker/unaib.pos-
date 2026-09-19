@@ -361,3 +361,16 @@ CREATE TABLE IF NOT EXISTS transactions (
 );
 CREATE INDEX IF NOT EXISTS idx_transactions_cat ON transactions(category);
 
+-- 23. System Audit Trail & User Activity Logs
+CREATE TABLE IF NOT EXISTS activity_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    username TEXT,
+    action TEXT NOT NULL,
+    description TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_activity_log_created ON activity_log(created_at);
+CREATE INDEX IF NOT EXISTS idx_activity_log_user ON activity_log(user_id);
+CREATE INDEX IF NOT EXISTS idx_activity_log_action ON activity_log(action);
+

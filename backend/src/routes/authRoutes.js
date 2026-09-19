@@ -21,8 +21,9 @@ const loginLimiter = rateLimit({
 // Public route for authentication (protected by rate limiter)
 router.post('/login', loginLimiter, authCtrl.login);
 
-// Authenticated session check
+// Authenticated session check & logout
 router.get('/me', authRequired, authCtrl.getMe);
+router.post('/logout', authRequired, authCtrl.logout);
 
 // Admin-only user management
 router.get('/users', authRequired, adminOnly, authCtrl.getUsers);

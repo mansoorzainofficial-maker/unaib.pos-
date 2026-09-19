@@ -243,6 +243,17 @@ async function initDb() {
           description TEXT,
           created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
         );
+        CREATE TABLE IF NOT EXISTS activity_log (
+          id BIGSERIAL PRIMARY KEY,
+          user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+          username VARCHAR(100),
+          action VARCHAR(100) NOT NULL,
+          description TEXT,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_activity_log_created ON activity_log(created_at);
+        CREATE INDEX IF NOT EXISTS idx_activity_log_user ON activity_log(user_id);
+        CREATE INDEX IF NOT EXISTS idx_activity_log_action ON activity_log(action);
       `);
       // Sync identity sequences after seeding with explicit IDs
       try {
@@ -251,7 +262,7 @@ async function initDb() {
       } catch (seqErr) {
         console.warn('Postgres sequence sync warning:', seqErr.message);
       }
-      console.log('✓ Supabase PostgreSQL: show_previous_balance, shipping, extra_charges & accounts verified.');
+      console.log('✓ Supabase PostgreSQL: show_previous_balance, shipping, accounts & activity_log verified.');
     } catch (pgErr) {
       console.warn('Postgres migration warning:', pgErr.message);
     }
@@ -442,9 +453,20 @@ async function initDb() {
         description TEXT,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
+      CREATE TABLE IF NOT EXISTS activity_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        username TEXT,
+        action TEXT NOT NULL,
+        description TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_activity_log_created ON activity_log(created_at);
+      CREATE INDEX IF NOT EXISTS idx_activity_log_user ON activity_log(user_id);
+      CREATE INDEX IF NOT EXISTS idx_activity_log_action ON activity_log(action);
     `);
   } catch (accMigErr) {
-    console.warn('Accounts schema migration warning:', accMigErr.message);
+    console.warn('Accounts & Activity log schema migration warning:', accMigErr.message);
   }
 }
 

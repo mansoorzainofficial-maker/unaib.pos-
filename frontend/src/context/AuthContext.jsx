@@ -85,6 +85,11 @@ export function AuthProvider({ children }) {
   };
 
   const logout = () => {
+    try {
+      if (localStorage.getItem('unaib_token') && localStorage.getItem('unaib_token') !== 'offline-token') {
+        api.auth.logout().catch(() => {});
+      }
+    } catch (_) {}
     localStorage.removeItem('unaib_token');
     localStorage.removeItem('unaib_user');
     setUser(null);

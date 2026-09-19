@@ -1,4 +1,5 @@
 const { query, get, run, transaction } = require('../config/db');
+const { logActivity } = require('../models/ActivityLog');
 
 /**
  * Generate unique Invoice Number (e.g. UCA-20260909-0001)
@@ -637,6 +638,13 @@ async function createCustomer(req, res) {
       `, [customerId, openBal]);
     }
 
+    await logActivity({
+      userId: req.user ? req.user.id : null,
+      username: req.user ? req.user.username : 'System',
+      action: 'customer_create',
+      description: `نیا گاہک رجسٹرڈ: ${name.trim()} (${phone ? phone.trim() : 'کوئی فون نہیں'})`
+    });
+
     return res.status(201).json({
       success: true,
       message: 'Customer registered successfully',
@@ -754,6 +762,13 @@ async function voidInvoice(req, res) {
         void_reason: void_reason,
         items_restored: lineItems.length
       };
+    });
+
+    await logActivity({
+      userId: voidedBy,
+      username: req.user ? req.user.username : 'Admin',
+      action: 'invoice_void',
+      description: `انوائس منسوخ #${voidResult.invoice_number} - وجہ: ${void_reason}`
     });
 
     return res.json({

@@ -14,7 +14,8 @@ import {
   BookOpen,
   Store,
   RotateCcw,
-  Building2
+  Building2,
+  History
 } from 'lucide-react';
 
 export default function Sidebar({ currentTab, setTab }) {
@@ -85,7 +86,8 @@ export default function Sidebar({ currentTab, setTab }) {
     { id: 'accounts', label: t('nav_accounts'), icon: Landmark },
     { id: 'expenses', label: t('nav_expenses'), icon: CreditCard },
     ...(isAdmin ? [
-      { id: 'reports', label: t('nav_reports'), icon: BarChart3, adminOnly: true }
+      { id: 'reports', label: t('nav_reports'), icon: BarChart3, adminOnly: true },
+      { id: 'activity_log', label: t('nav_activity_logs'), icon: History, adminOnly: true }
     ] : [])
   ];
 

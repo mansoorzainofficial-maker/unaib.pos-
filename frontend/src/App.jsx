@@ -19,6 +19,7 @@ import Ledger from './pages/Ledger';
 import SaleReturnScreen from './pages/SaleReturnScreen';
 import PurchaseReturnScreen from './pages/PurchaseReturnScreen';
 import AccountsScreen from './pages/AccountsScreen';
+import ActivityLogScreen from './pages/ActivityLogScreen';
 import LoginScreen from './pages/LoginScreen';
 import CashDrawerModal from './pages/CashDrawerModal';
 
@@ -48,7 +49,7 @@ export default function App() {
   }
 
   // Fallback if cashier tries accessing admin tabs
-  const activeTabSafe = (!isAdmin && (currentTab === 'reports' || currentTab === 'settings')) ? 'pos' : currentTab;
+  const activeTabSafe = (!isAdmin && (currentTab === 'reports' || currentTab === 'settings' || currentTab === 'activity_log')) ? 'pos' : currentTab;
 
   return (
     <div className="h-screen w-screen flex flex-col bg-slate-100 text-slate-800 overflow-hidden select-none">
@@ -120,6 +121,9 @@ export default function App() {
           )}
           {activeTabSafe === 'settings' && isAdmin && (
             <SettingsScreen />
+          )}
+          {activeTabSafe === 'activity_log' && isAdmin && (
+            <ActivityLogScreen />
           )}
         </main>
       </div>
