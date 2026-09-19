@@ -10,12 +10,14 @@ export default function QuickProductModal({
   supplierId = null,
   paymentType = 'credit',
   initialCost = 0,
+  initialName = '',
+  initialCategoryId = '',
   onSuccess
 }) {
   const { t, isUrdu } = useLanguage();
-  const [name, setName] = useState('');
+  const [name, setName] = useState(initialName || '');
   const [quantity, setQuantity] = useState(10);
-  const [categoryId, setCategoryId] = useState('');
+  const [categoryId, setCategoryId] = useState(initialCategoryId || '');
   const [costPrice, setCostPrice] = useState(initialCost || '');
   const [salePrice, setSalePrice] = useState('');
   const [barcode, setBarcode] = useState('');
@@ -24,6 +26,20 @@ export default function QuickProductModal({
 
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
+
+  React.useEffect(() => {
+    if (isOpen) {
+      if (initialName) setName(initialName);
+      if (initialCategoryId) setCategoryId(initialCategoryId);
+      if (initialCost) {
+        setCostPrice(initialCost);
+        const num = Number(initialCost);
+        if (num > 0 && (!salePrice || Number(salePrice) === 0)) {
+          setSalePrice(Math.round((num * 1.25) / 10) * 10);
+        }
+      }
+    }
+  }, [isOpen, initialName, initialCategoryId, initialCost]);
 
   if (!isOpen) return null;
 

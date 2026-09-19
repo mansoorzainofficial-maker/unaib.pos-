@@ -47,16 +47,23 @@ export default function GrnItemRow({
     onChange(index, {
       ...item,
       product_id: productId ? Number(productId) : '',
+      custom_product_name: '',
       category_id: selected?.category_id ? Number(selected.category_id) : item.category_id,
       unit_cost: selected ? Number(selected.cost_price || 0) : item.unit_cost
     });
   };
 
-  const [searchQuery, setSearchQuery] = React.useState('');
+  const [searchQuery, setSearchQuery] = React.useState(item.custom_product_name || '');
   const [isOpen, setIsOpen] = React.useState(false);
   const [highlightedIndex, setHighlightedIndex] = React.useState(0);
   const inputRef = React.useRef(null);
   const dropdownRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (item.custom_product_name && !item.product_id && searchQuery !== item.custom_product_name) {
+      setSearchQuery(item.custom_product_name);
+    }
+  }, [item.custom_product_name, item.product_id]);
 
   // Close dropdown on click outside
   React.useEffect(() => {
@@ -129,6 +136,11 @@ export default function GrnItemRow({
               onClick={() => {
                 handleProductChange('');
                 setSearchQuery('');
+                onChange(index, {
+                  ...item,
+                  product_id: '',
+                  custom_product_name: ''
+                });
                 setIsOpen(true);
                 setTimeout(() => inputRef.current?.focus(), 50);
               }}
@@ -148,9 +160,15 @@ export default function GrnItemRow({
                 value={searchQuery}
                 onFocus={() => setIsOpen(true)}
                 onChange={(e) => {
-                  setSearchQuery(e.target.value);
+                  const val = e.target.value;
+                  setSearchQuery(val);
                   setIsOpen(true);
                   setHighlightedIndex(0);
+                  onChange(index, {
+                    ...item,
+                    product_id: '',
+                    custom_product_name: val
+                  });
                 }}
                 onKeyDown={(e) => {
                   if (e.key === 'ArrowDown') {
@@ -176,10 +194,29 @@ export default function GrnItemRow({
                     setIsOpen(false);
                   }
                 }}
-                required={!item.product_id}
+                required={!item.product_id && !item.custom_product_name?.trim()}
                 className="w-full px-2.5 py-1.5 bg-white border-2 border-amber-400 rounded-lg text-slate-900 font-semibold focus:ring-2 focus:ring-amber-200 focus:outline-hidden text-xs placeholder:text-slate-400 shadow-2xs"
               />
             </div>
+
+            {/* Instant Auto-Register Badge if user typed custom product name */}
+            {searchQuery.trim() && !item.product_id && (
+              <div className="flex items-center justify-between mt-1 px-2 py-1 bg-amber-50/90 border border-amber-300 rounded-lg text-amber-950 animate-in fade-in">
+                <span className="text-[10px] font-bold flex items-center gap-1">
+                  <span>✨ {isUrdu ? 'نیا آئٹم: GRN محفوظ ہوتے ہی خودکار رجسٹر ہوگا' : 'New item: auto-registers on save'}</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsOpen(false);
+                    if (onOpenAddProduct) onOpenAddProduct(index);
+                  }}
+                  className="text-[10px] bg-amber-200 hover:bg-amber-300 text-amber-950 px-1.5 py-0.5 rounded font-bold transition-colors cursor-pointer"
+                >
+                  {isUrdu ? 'فارم کھولیں' : 'Open Form'}
+                </button>
+              </div>
+            )}
 
             {/* Instant Filter Dropdown */}
             {isOpen && (
@@ -191,10 +228,19 @@ export default function GrnItemRow({
                     setIsOpen(false);
                     if (onOpenAddProduct) onOpenAddProduct(index);
                   }}
-                  className="w-full px-3 py-2 text-left bg-amber-50 hover:bg-amber-100 text-amber-900 font-bold flex items-center gap-1.5 text-xs transition-colors cursor-pointer"
+                  className="w-full px-3 py-2 text-left bg-blue-50 hover:bg-blue-100 text-blue-950 font-bold flex items-center justify-between gap-1.5 text-xs transition-colors cursor-pointer border-b border-blue-200"
                 >
-                  <Plus className="w-3.5 h-3.5 text-amber-700" />
-                  <span>{t('grn_select_or_add_prod') || (isUrdu ? '➕ + نیا پراڈکٹ رجسٹر کریں...' : '➕ + Register New Product...')}</span>
+                  <div className="flex items-center gap-1.5 truncate">
+                    <Plus className="w-3.5 h-3.5 text-blue-700 shrink-0" />
+                    <span className="truncate">
+                      {searchQuery.trim()
+                        ? (isUrdu ? `➕ نیا رجسٹر کریں: "${searchQuery}"` : `➕ Register New: "${searchQuery}"`)
+                        : (t('grn_select_or_add_prod') || (isUrdu ? '➕ + نیا پراڈکٹ رجسٹر کریں...' : '➕ + Register New Product...'))}
+                    </span>
+                  </div>
+                  <span className="text-[10px] bg-blue-600 text-white px-2 py-0.5 rounded font-bold shrink-0">
+                    {isUrdu ? 'فارم کھولیں' : 'Open'}
+                  </span>
                 </button>
 
                 {/* Filtered Matches */}
@@ -225,8 +271,13 @@ export default function GrnItemRow({
                 ))}
 
                 {matches.length === 0 && (
-                  <div className="p-3 text-center text-xs text-slate-400">
-                    {isUrdu ? 'کوئی پراڈکٹ نہیں ملا۔ نیا بنانے کے لیے اوپر کلک کریں۔' : 'No matching product found. Click above to add.'}
+                  <div className="p-3 text-center text-xs text-slate-500 bg-slate-50">
+                    <p className="font-bold text-slate-800">{isUrdu ? `"${searchQuery}" سسٹم میں نیا ہے` : `"${searchQuery}" is new`}</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">
+                      {isUrdu
+                        ? 'فکر نہ کریں! نیچے "رسید محفوظ کریں" دبانے پر یہ خودکار رجسٹر ہو جائے گا۔'
+                        : 'No problem! It will automatically be registered when you save the GRN.'}
+                    </p>
                   </div>
                 )}
               </div>

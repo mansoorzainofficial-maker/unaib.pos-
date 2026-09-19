@@ -18,7 +18,7 @@ export default function CreateGrn({ onNavigateToList }) {
   const [receivedDate, setReceivedDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [notes, setNotes] = useState('');
   const [items, setItems] = useState([
-    { product_id: '', category_id: '', quantity_ordered: 1, quantity_received: 1, unit_cost: 0 }
+    { product_id: '', category_id: '', custom_product_name: '', quantity_ordered: 1, quantity_received: 1, unit_cost: 0 }
   ]);
   const [loading, setLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -63,13 +63,14 @@ export default function CreateGrn({ onNavigateToList }) {
     // 2. Select into GRN row
     let targetIdx = targetRowIndex;
     if (targetIdx === null || targetIdx < 0 || targetIdx >= items.length) {
-      const emptyIdx = items.findIndex(it => !it.product_id);
+      const emptyIdx = items.findIndex(it => !it.product_id && !it.custom_product_name);
       targetIdx = emptyIdx !== -1 ? emptyIdx : items.length;
     }
 
     const newItem = {
       product_id: newProd.id,
       category_id: newProd.category_id || '',
+      custom_product_name: '',
       quantity_ordered: Number(qty) || 1,
       quantity_received: Number(qty) || 1,
       unit_cost: Number(newProd.cost_price || 0)
@@ -82,8 +83,8 @@ export default function CreateGrn({ onNavigateToList }) {
       } else {
         next.push(newItem);
       }
-      const valid = next.filter(it => it.product_id);
-      return valid.length > 0 ? valid : [{ product_id: '', category_id: '', quantity_ordered: 1, quantity_received: 1, unit_cost: 0 }];
+      const valid = next.filter(it => it.product_id || it.custom_product_name);
+      return valid.length > 0 ? valid : [{ product_id: '', category_id: '', custom_product_name: '', quantity_ordered: 1, quantity_received: 1, unit_cost: 0 }];
     });
 
     setSuccessMsg(isUrdu
@@ -105,7 +106,7 @@ export default function CreateGrn({ onNavigateToList }) {
   const handleAddItemRow = () => {
     setItems(prev => [
       ...prev,
-      { product_id: '', category_id: '', quantity_ordered: 1, quantity_received: 1, unit_cost: 0 }
+      { product_id: '', category_id: '', custom_product_name: '', quantity_ordered: 1, quantity_received: 1, unit_cost: 0 }
     ]);
   };
 
@@ -114,9 +115,9 @@ export default function CreateGrn({ onNavigateToList }) {
     setItems(prev => prev.filter((_, i) => i !== index));
   };
 
-  // Calculate live Grand Total
+  // Calculate live Grand Total (counts selected products AND typed custom products)
   const calculatedGrandTotal = items.reduce((sum, it) => {
-    if (!it.product_id) return sum;
+    if (!it.product_id && !it.custom_product_name?.trim()) return sum;
     const qty = Number(it.quantity_received) || 0;
     const cost = Number(it.unit_cost) || 0;
     return sum + (qty * cost);
@@ -138,8 +139,8 @@ export default function CreateGrn({ onNavigateToList }) {
       return;
     }
 
-    // Filter valid items (discards any empty rows)
-    const validItems = items.filter(it => it.product_id && Number(it.quantity_received) > 0);
+    // Filter valid items (discards any completely empty rows)
+    const validItems = items.filter(it => (it.product_id || it.custom_product_name?.trim()) && Number(it.quantity_received) > 0);
     if (validItems.length === 0) {
       setErrorMsg(isUrdu ? 'براہِ کرم کم از کم ایک پراڈکٹ اور مقدار درج کریں۔' : 'Please select at least one product with valid quantity.');
       return;
@@ -155,6 +156,48 @@ export default function CreateGrn({ onNavigateToList }) {
 
     setIsSubmitting(true);
     try {
+      // 1. Auto-register any items that were typed manually without selecting an existing ID
+      for (const it of validItems) {
+        if (!it.product_id && it.custom_product_name?.trim()) {
+          const trimmedName = it.custom_product_name.trim();
+          // Check if product already exists in memory with exact name
+          const existing = products.find(p => p.name.trim().toLowerCase() === trimmedName.toLowerCase());
+          if (existing) {
+            it.product_id = existing.id;
+          } else {
+            const unitCost = Number(it.unit_cost) || 0;
+            const suggestedSale = Math.round((unitCost * 1.25) / 10) * 10 || unitCost;
+            const newProdRes = await api.products.create({
+              name: trimmedName,
+              category_id: it.category_id ? Number(it.category_id) : null,
+              cost_price: unitCost,
+              sale_price: suggestedSale,
+              stock_quantity: 0,
+              low_stock_threshold: 5,
+              supplier_id: supplierId ? Number(supplierId) : null,
+              barcode: null,
+              has_serials: 0,
+              warranty_months: 12,
+              description: null
+            });
+            const newId = newProdRes.productId || newProdRes.product?.id || newProdRes.id;
+            if (!newId) {
+              throw new Error(isUrdu ? `پراڈکٹ "${trimmedName}" رجسٹر نہیں ہو سکی۔` : `Could not auto-register product "${trimmedName}".`);
+            }
+            it.product_id = newId;
+            const createdProdObj = {
+              id: newId,
+              name: trimmedName,
+              category_id: it.category_id || null,
+              cost_price: unitCost,
+              sale_price: suggestedSale,
+              stock_quantity: 0
+            };
+            setProducts(prev => [createdProdObj, ...prev]);
+          }
+        }
+      }
+
       const payload = {
         supplier_id: Number(supplierId),
         payment_type: paymentType,
@@ -175,7 +218,7 @@ export default function CreateGrn({ onNavigateToList }) {
           : `✓ GRN #${res.grn.grn_number} saved successfully! Inventory and ledger updated.`
         );
         // Reset form
-        setItems([{ product_id: '', category_id: '', quantity_ordered: 1, quantity_received: 1, unit_cost: 0 }]);
+        setItems([{ product_id: '', category_id: '', custom_product_name: '', quantity_ordered: 1, quantity_received: 1, unit_cost: 0 }]);
         setNotes('');
         loadMeta();
         setTimeout(() => {
@@ -361,6 +404,17 @@ export default function CreateGrn({ onNavigateToList }) {
             <div className="flex items-center gap-2">
               <button
                 type="button"
+                onClick={() => {
+                  setTargetRowIndex(null);
+                  setIsAddProductOpen(true);
+                }}
+                className="flex items-center space-x-1.5 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs shadow-xs transition-colors cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>{isUrdu ? '+ نیا پراڈکٹ رجسٹر کریں' : '+ Register New Product'}</span>
+              </button>
+              <button
+                type="button"
                 onClick={handleAddItemRow}
                 className="flex items-center space-x-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-xl text-xs shadow-xs transition-colors cursor-pointer"
               >
@@ -418,7 +472,7 @@ export default function CreateGrn({ onNavigateToList }) {
 
             <button
               type="submit"
-              disabled={isSubmitting || items.every(it => !it.product_id)}
+              disabled={isSubmitting || items.every(it => !it.product_id && !it.custom_product_name?.trim())}
               className="px-6 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 text-slate-950 font-black rounded-xl text-xs shadow-md shadow-amber-500/20 flex items-center justify-center space-x-2 transition-all cursor-pointer"
             >
               {isSubmitting ? (
@@ -444,6 +498,8 @@ export default function CreateGrn({ onNavigateToList }) {
         categories={categories}
         supplierId={supplierId}
         paymentType={paymentType}
+        initialName={targetRowIndex !== null ? items[targetRowIndex]?.custom_product_name : ''}
+        initialCategoryId={targetRowIndex !== null ? items[targetRowIndex]?.category_id : ''}
         initialCost={targetRowIndex !== null ? items[targetRowIndex]?.unit_cost : 0}
         onSuccess={handleProductCreated}
       />
