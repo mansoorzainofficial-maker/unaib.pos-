@@ -15,6 +15,8 @@ import {
 import { ledgerApi } from '../services/ledgerApi';
 import LedgerTable from '../components/LedgerTable';
 import PaymentForm from '../components/PaymentForm';
+import CustomerForm from '../components/CustomerForm';
+import SupplierForm from '../components/SupplierForm';
 import { useLanguage } from '../context/LanguageContext';
 
 export default function Ledger({ initialTab = 'supplier', initialPartyId = null }) {
@@ -26,8 +28,23 @@ export default function Ledger({ initialTab = 'supplier', initialPartyId = null 
   const [loadingParties, setLoadingParties] = useState(false);
   const [loadingStatement, setLoadingStatement] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
+  const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
   const [partySearch, setPartySearch] = useState('');
   const [notification, setNotification] = useState('');
+
+  const handlePartyCreated = (newParty, type) => {
+    loadParties();
+    if (newParty && newParty.id) {
+      setSelectedPartyId(newParty.id);
+      loadStatement(activeTab, newParty.id);
+    }
+    setNotification(type === 'supplier'
+      ? (isUrdu ? `✓ نیا سپلائر "${newParty.name}" کامیابی سے رجسٹر ہو گیا!` : `✓ Supplier "${newParty.name}" registered successfully!`)
+      : (isUrdu ? `✓ نیا گاہک "${newParty.name}" کامیابی سے رجسٹر ہو گیا!` : `✓ Customer "${newParty.name}" registered successfully!`)
+    );
+    setTimeout(() => setNotification(''), 5000);
+  };
 
   // Sync when initialTab or initialPartyId props change
   useEffect(() => {
@@ -137,29 +154,40 @@ export default function Ledger({ initialTab = 'supplier', initialPartyId = null 
           </div>
         </div>
 
-        {/* Tab Switcher: Supplier / Client */}
-        <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold">
+        <div className="flex items-center gap-2">
+          {/* Tab Switcher: Supplier / Client */}
+          <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold">
+            <button
+              onClick={() => setActiveTab('supplier')}
+              className={`flex items-center space-x-1.5 px-4 py-2 rounded-lg transition-all cursor-pointer ${
+                isSupplier
+                  ? 'bg-white text-blue-700 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Truck className="w-4 h-4" />
+              <span>{t('tab_suppliers')}</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('client')}
+              className={`flex items-center space-x-1.5 px-4 py-2 rounded-lg transition-all cursor-pointer ${
+                !isSupplier
+                  ? 'bg-white text-indigo-700 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Users className="w-4 h-4" />
+              <span>{t('tab_clients')}</span>
+            </button>
+          </div>
+
+          {/* Quick Add Party Button */}
           <button
-            onClick={() => setActiveTab('supplier')}
-            className={`flex items-center space-x-1.5 px-4 py-2 rounded-lg transition-all cursor-pointer ${
-              isSupplier
-                ? 'bg-white text-blue-700 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
+            onClick={() => isSupplier ? setIsSupplierModalOpen(true) : setIsCustomerModalOpen(true)}
+            className="flex items-center space-x-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs shadow-md shadow-blue-600/20 transition-all cursor-pointer shrink-0"
           >
-            <Truck className="w-4 h-4" />
-            <span>{t('tab_suppliers')}</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('client')}
-            className={`flex items-center space-x-1.5 px-4 py-2 rounded-lg transition-all cursor-pointer ${
-              !isSupplier
-                ? 'bg-white text-indigo-700 shadow-xs'
-                : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Users className="w-4 h-4" />
-            <span>{t('tab_clients')}</span>
+            <Plus className="w-4 h-4" />
+            <span>{isSupplier ? t('suppliers_add_btn') : t('customer_quick_add')}</span>
           </button>
         </div>
       </div>
@@ -180,9 +208,20 @@ export default function Ledger({ initialTab = 'supplier', initialPartyId = null 
             <span className="font-bold text-xs text-slate-800">
               {isSupplier ? t('all_suppliers') : t('all_customers')}
             </span>
-            <span className="text-[10px] text-slate-400 font-mono font-semibold">
-              {filteredParties.length} {t('available_count')}
-            </span>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => isSupplier ? setIsSupplierModalOpen(true) : setIsCustomerModalOpen(true)}
+                className="text-[10px] font-bold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded-lg border border-blue-200 transition-colors flex items-center gap-1 cursor-pointer"
+                title={isSupplier ? t('suppliers_add_btn') : t('customer_quick_add')}
+              >
+                <Plus className="w-3 h-3" />
+                <span>{isSupplier ? '+ سپلائر' : '+ گاہک'}</span>
+              </button>
+              <span className="text-[10px] text-slate-400 font-mono font-semibold">
+                ({filteredParties.length})
+              </span>
+            </div>
           </div>
 
           {/* Search Party */}
@@ -338,6 +377,20 @@ export default function Ledger({ initialTab = 'supplier', initialPartyId = null 
         partyType={activeTab}
         party={selectedParty}
         onSuccess={handlePaymentSuccess}
+      />
+
+      {/* Unified Add Customer Modal */}
+      <CustomerForm
+        isOpen={isCustomerModalOpen}
+        onClose={() => setIsCustomerModalOpen(false)}
+        onSuccess={(cust) => handlePartyCreated(cust, 'client')}
+      />
+
+      {/* Unified Add Supplier Modal */}
+      <SupplierForm
+        isOpen={isSupplierModalOpen}
+        onClose={() => setIsSupplierModalOpen(false)}
+        onSuccess={(sup) => handlePartyCreated(sup, 'supplier')}
       />
     </div>
   );

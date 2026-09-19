@@ -645,10 +645,22 @@ async function createCustomer(req, res) {
       description: `نیا گاہک رجسٹرڈ: ${name.trim()} (${phone ? phone.trim() : 'کوئی فون نہیں'})`
     });
 
+    const customerObj = {
+      id: customerId,
+      name: name.trim(),
+      phone: phone ? phone.trim() : null,
+      email: email ? email.trim() : null,
+      address: address ? address.trim() : null,
+      current_balance: openBal,
+      total_spent: 0,
+      created_at: new Date().toISOString()
+    };
+
     return res.status(201).json({
       success: true,
       message: 'Customer registered successfully',
-      customerId
+      customerId,
+      customer: customerObj
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message });

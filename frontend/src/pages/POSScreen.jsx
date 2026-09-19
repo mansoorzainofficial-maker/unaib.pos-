@@ -15,6 +15,7 @@ import {
   Tag,
   UserCheck,
   User,
+  UserPlus,
   Building2,
   Search,
   Printer,
@@ -23,6 +24,7 @@ import {
   Zap,
   RefreshCw
 } from 'lucide-react';
+import CustomerForm from '../components/CustomerForm';
 import { useLanguage } from '../context/LanguageContext';
 import { saveProductsCache, getCachedProducts, savePendingBill } from '../utils/indexedDB';
 import { syncManager } from '../utils/syncManager';
@@ -77,7 +79,24 @@ export default function POSScreen({ onLowStockChange }) {
   const [showWalkinDetails, setShowWalkinDetails] = useState(false);
   const [partySearchQuery, setPartySearchQuery] = useState('');
   const [isPartyDropdownOpen, setIsPartyDropdownOpen] = useState(false);
+  const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
   const [showPreviousBalance, setShowPreviousBalance] = useState(true);
+
+  // Auto-select newly registered customer into checkout
+  const handleCustomerCreated = (newCust) => {
+    if (!newCust) return;
+    setCustomers(prev => [newCust, ...prev.filter(c => c.id !== newCust.id)]);
+    setSelectedCustomerId(newCust.id);
+    setCustomerName(newCust.name);
+    setCustomerPhone(newCust.phone || '');
+    setPartySearchQuery(newCust.name);
+    setIsPartyDropdownOpen(false);
+    setSuccessMsg(isUrdu
+      ? `✓ نیا گاہک "${newCust.name}" رجسٹرڈ اور بل میں خودکار منتخب ہو گیا!`
+      : `✓ Customer "${newCust.name}" registered and automatically selected!`
+    );
+    setTimeout(() => setSuccessMsg(''), 4000);
+  };
 
   // Discount & Payment
   const [discountType, setDiscountType] = useState('amount'); // 'amount' or 'percentage'
@@ -1483,9 +1502,20 @@ export default function POSScreen({ onLowStockChange }) {
                     <Building2 className="w-4 h-4 text-blue-700" />
                     <span>{t('wholesale_heading')}</span>
                   </span>
-                  <span className="text-[10px] font-bold text-blue-800 bg-blue-100 px-2 py-0.5 rounded border border-blue-200">
-                    {t('credit_sale_badge')}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsCustomerModalOpen(true)}
+                      className="text-[11px] font-bold text-blue-700 hover:text-blue-900 bg-white hover:bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-300 shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                      title={t('customer_quick_add')}
+                    >
+                      <UserPlus className="w-3.5 h-3.5 text-blue-600" />
+                      <span>{t('customer_quick_add')}</span>
+                    </button>
+                    <span className="text-[10px] font-bold text-blue-800 bg-blue-100 px-2 py-0.5 rounded border border-blue-200">
+                      {t('credit_sale_badge')}
+                    </span>
+                  </div>
                 </div>
 
                 {/* Party Autocomplete Search / Select */}
@@ -1519,6 +1549,21 @@ export default function POSScreen({ onLowStockChange }) {
 
                   {isPartyDropdownOpen && (
                     <div className="absolute top-full left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-xl z-50 divide-y divide-slate-100">
+                      {/* Quick Register New Customer option */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsPartyDropdownOpen(false);
+                          setIsCustomerModalOpen(true);
+                        }}
+                        className="w-full px-3 py-2 text-left bg-blue-50/80 hover:bg-blue-100 flex items-center justify-between text-blue-800 font-bold text-xs border-b border-blue-200 cursor-pointer"
+                      >
+                        <div className="flex items-center gap-1.5">
+                          <UserPlus className="w-3.5 h-3.5 text-blue-600" />
+                          <span>{t('customer_modal_title_new')}</span>
+                        </div>
+                        <span className="text-[10px] bg-blue-200/70 text-blue-900 px-1.5 py-0.5 rounded font-bold">+ New</span>
+                      </button>
                       {partiesList
                         .filter((c) =>
                           (c.name || '').toLowerCase().includes(partySearchQuery.toLowerCase()) ||
@@ -1862,6 +1907,13 @@ export default function POSScreen({ onLowStockChange }) {
           />
         )}
       </Modal>
+
+      {/* QUICK ADD CUSTOMER MODAL */}
+      <CustomerForm
+        isOpen={isCustomerModalOpen}
+        onClose={() => setIsCustomerModalOpen(false)}
+        onSuccess={handleCustomerCreated}
+      />
     </div>
   );
 }
