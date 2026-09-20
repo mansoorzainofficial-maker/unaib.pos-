@@ -372,17 +372,19 @@ export default function Ledger({ initialTab = 'supplier', initialPartyId = null 
                         else setIsCustomerModalOpen(true);
                       }}
                       title={isUrdu ? `${isSupplier ? 'سپلائر' : 'گاہک'} کی معلومات میں ترمیم کریں` : 'Edit'}
-                      className="p-2 text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 rounded-xl border border-blue-200 transition-colors cursor-pointer"
+                      className="flex items-center space-x-1.5 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded-xl text-xs border border-blue-200 transition-all cursor-pointer shadow-xs"
                     >
-                      <Edit className="w-4 h-4" />
+                      <Edit className="w-3.5 h-3.5" />
+                      <span>{isUrdu ? 'ترمیم (Edit)' : 'Edit'}</span>
                     </button>
 
                     <button
                       onClick={handleDeleteParty}
                       title={isUrdu ? `${isSupplier ? 'سپلائر' : 'گاہک'} حذف کریں` : 'Delete'}
-                      className="p-2 text-rose-600 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 rounded-xl border border-rose-200 transition-colors cursor-pointer"
+                      className="flex items-center space-x-1.5 px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold rounded-xl text-xs border border-rose-200 transition-all cursor-pointer shadow-xs"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>{isUrdu ? 'حذف (Delete)' : 'Delete'}</span>
                     </button>
                   </>
                 )}
