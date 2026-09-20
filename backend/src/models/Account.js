@@ -62,9 +62,10 @@ class Account {
   static async calculateBalance(account) {
     if (!account || !account.id) return 0;
     const accId = account.id;
-    let balance = Number(account.current_balance || 0);
 
     if (account.type === 'cash' || account.is_default === 1) {
+      let balance = 0;
+
       // 1. Sales cash: net completed cash received (paid_amount - change_amount)
       let salesAmt = 0;
       try {
@@ -83,7 +84,7 @@ class Account {
         const custRow = await get(`
           SELECT COALESCE(SUM(credit), 0) as amt
           FROM ledger_entries
-          WHERE (account_id = ? OR (account_id IS NULL AND payment_method = 'cash'))
+          WHERE (account_id = ? OR account_id IS NULL)
             AND party_type IN ('client', 'customer')
             AND entry_type IN ('payment', 'payment_received')
         `, [accId]);
@@ -107,8 +108,8 @@ class Account {
         const expRow = await get(`
           SELECT COALESCE(SUM(amount), 0) as amt
           FROM expenses
-          WHERE (account_id = ? OR payment_method = 'cash')
-        `, [accId]);
+          WHERE payment_method = 'cash'
+        `);
         expenseAmt = Number(expRow?.amt || 0);
       } catch (_) {}
 
@@ -118,9 +119,9 @@ class Account {
         const purRow = await get(`
           SELECT COALESCE(SUM(paid_amount), 0) as amt
           FROM purchases
-          WHERE (account_id = ? OR payment_method = 'cash')
+          WHERE payment_method = 'cash'
             AND (status IS NULL OR status != 'void')
-        `, [accId]);
+        `);
         purchaseAmt = Number(purRow?.amt || 0);
       } catch (_) {}
 
@@ -130,7 +131,7 @@ class Account {
         const suppRow = await get(`
           SELECT COALESCE(SUM(CASE WHEN credit > 0 THEN credit ELSE debit END), 0) as amt
           FROM ledger_entries
-          WHERE (account_id = ? OR (account_id IS NULL AND payment_method = 'cash'))
+          WHERE (account_id = ? OR account_id IS NULL)
             AND party_type = 'supplier'
             AND entry_type IN ('payment', 'payment_made')
         `, [accId]);
@@ -149,61 +150,14 @@ class Account {
       } catch (_) {}
 
       balance += salesAmt + custRecoveryAmt + purReturnAmt - expenseAmt - purchaseAmt - suppPaymentAmt - saleReturnAmt;
+      return Math.round(balance * 100) / 100;
     } else {
-      // Bank / Digital Wallet account
-      // Inflows: Customer payments received via this specific account
-      let custRecoveryAmt = 0;
-      try {
-        const custRow = await get(`
-          SELECT COALESCE(SUM(credit), 0) as amt
-          FROM ledger_entries
-          WHERE account_id = ?
-            AND party_type IN ('client', 'customer')
-            AND entry_type IN ('payment', 'payment_received')
-        `, [accId]);
-        custRecoveryAmt = Number(custRow?.amt || 0);
-      } catch (_) {}
-
-      // Outflows: Supplier payments made from this account
-      let suppPaymentAmt = 0;
-      try {
-        const suppRow = await get(`
-          SELECT COALESCE(SUM(CASE WHEN credit > 0 THEN credit ELSE debit END), 0) as amt
-          FROM ledger_entries
-          WHERE account_id = ?
-            AND party_type = 'supplier'
-            AND entry_type IN ('payment', 'payment_made')
-        `, [accId]);
-        suppPaymentAmt = Number(suppRow?.amt || 0);
-      } catch (_) {}
-
-      // Outflows: Expenses paid from this account
-      let expenseAmt = 0;
-      try {
-        const expRow = await get(`
-          SELECT COALESCE(SUM(amount), 0) as amt
-          FROM expenses
-          WHERE account_id = ?
-        `, [accId]);
-        expenseAmt = Number(expRow?.amt || 0);
-      } catch (_) {}
-
-      // Outflows: Purchases paid from this account
-      let purchaseAmt = 0;
-      try {
-        const purRow = await get(`
-          SELECT COALESCE(SUM(paid_amount), 0) as amt
-          FROM purchases
-          WHERE account_id = ?
-            AND (status IS NULL OR status != 'void')
-        `, [accId]);
-        purchaseAmt = Number(purRow?.amt || 0);
-      } catch (_) {}
-
-      balance += custRecoveryAmt - suppPaymentAmt - expenseAmt - purchaseAmt;
+      // Bank / Digital Wallet account:
+      // The current_balance column in `accounts` table is maintained atomically on every transaction
+      // (opening balance + client recoveries - supplier payments via Ledger.recordPayment).
+      // Returning current_balance directly prevents double-subtraction.
+      return Math.round((Number(account.current_balance) || 0) * 100) / 100;
     }
-
-    return Math.round(balance * 100) / 100;
   }
 
   static async hasTransactions(id) {
