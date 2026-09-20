@@ -296,7 +296,7 @@ export default function InventoryScreen({ onLowStockChange }) {
   }, [products, search, selectedCategory, filterTab, sortBy]);
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-slate-50 text-slate-800 p-4 space-y-4">
+    <div className="flex-1 flex flex-col h-full min-h-0 overflow-hidden bg-slate-50 text-slate-800 p-4 space-y-4 select-text">
       {/* Top Banner & Quick Action Cards (Matching Uizard Reference Layout) */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch shrink-0">
         {/* Left Greeting & Action Card */}
@@ -614,7 +614,7 @@ export default function InventoryScreen({ onLowStockChange }) {
         )}
 
         {/* Inventory Products Table */}
-        <div className="flex-1 overflow-y-auto rounded-xl border border-slate-200/80">
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-auto rounded-xl border border-slate-200/80">
         <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 text-slate-800 uppercase tracking-wider text-xs font-black sticky top-0 z-10 border-b border-slate-200">
             <tr>

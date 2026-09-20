@@ -145,7 +145,7 @@ export default function InvoicesHistoryScreen() {
   });
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-slate-100 text-slate-800 p-4 space-y-4">
+    <div className="flex-1 flex flex-col h-full min-h-0 overflow-hidden bg-slate-100 text-slate-800 p-4 space-y-4 select-text">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
         <div>
@@ -248,7 +248,7 @@ export default function InvoicesHistoryScreen() {
       </div>
 
       {/* Invoices List */}
-      <div className="flex-1 overflow-y-auto bg-white rounded-xl border border-slate-200 shadow-xs">
+      <div className="flex-1 min-h-0 overflow-y-auto overflow-x-auto bg-white rounded-xl border border-slate-200 shadow-xs">
         <table className="w-full text-left text-xs">
           <thead className="bg-slate-50 text-slate-700 font-bold uppercase text-[10px] sticky top-0 border-b border-slate-200">
             <tr>

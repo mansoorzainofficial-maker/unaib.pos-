@@ -48,8 +48,9 @@ export default function GrnList({ onNavigateToCreate }) {
   });
 
   return (
-    <div className="p-4 space-y-4 max-w-7xl mx-auto">
-      {/* Header Bar */}
+    <div className="flex-1 w-full h-full overflow-y-auto bg-slate-100 p-4 select-text">
+      <div className="max-w-7xl mx-auto space-y-4 pb-16">
+        {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
         <div className="flex items-center space-x-3">
           <div className="w-10 h-10 rounded-xl bg-amber-500 flex items-center justify-center text-slate-950 shadow-md shadow-amber-500/20 font-black">
@@ -259,6 +260,7 @@ export default function GrnList({ onNavigateToCreate }) {
           </div>
         </div>
       )}
+      </div>
     </div>
   );
 }

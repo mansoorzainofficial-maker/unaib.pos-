@@ -362,7 +362,7 @@ export default function LedgerScreen({ initialTab = 'customers' }) {
   };
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-slate-100 text-slate-800 p-4 space-y-4">
+    <div className="flex-1 flex flex-col h-full min-h-0 overflow-hidden bg-slate-100 text-slate-800 p-4 space-y-4 select-text">
       {/* Header & Tab Controls */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
         <div>
@@ -454,10 +454,10 @@ export default function LedgerScreen({ initialTab = 'customers' }) {
       </div>
 
       {/* MAIN WORKSPACE: Directory List & Statement Panel */}
-      <div className="flex-1 flex gap-4 overflow-hidden">
+      <div className="flex-1 min-h-0 flex gap-4 overflow-hidden">
         {/* LEFT DIRECTORY: Hidden when in Full-Width Expanded View */}
         {!isExpanded && (
-          <div className="w-4/12 flex flex-col bg-white rounded-xl border border-slate-200 overflow-hidden shrink-0 transition-all duration-200 shadow-xs">
+          <div className="w-4/12 min-h-0 flex flex-col bg-white rounded-xl border border-slate-200 overflow-hidden shrink-0 transition-all duration-200 shadow-xs">
             {/* Directory Header */}
             <div className="p-3 border-b border-slate-200 space-y-2">
               <div className="flex items-center justify-between">
@@ -562,7 +562,7 @@ export default function LedgerScreen({ initialTab = 'customers' }) {
         )}
 
         {/* RIGHT STATEMENT PANEL: Expands to 100% when isExpanded is true */}
-        <div className={`${isExpanded ? 'w-full' : 'w-8/12'} flex flex-col bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs transition-all duration-200`}>
+        <div className={`${isExpanded ? 'w-full' : 'w-8/12'} min-h-0 flex flex-col bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs transition-all duration-200`}>
           {!selectedParty ? (
             <div className="h-full flex flex-col items-center justify-center text-slate-500 space-y-3 p-8">
               <FileText className="w-14 h-14 text-slate-400 stroke-[1.5]" />

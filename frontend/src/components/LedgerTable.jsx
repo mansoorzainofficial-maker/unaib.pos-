@@ -48,8 +48,8 @@ export default function LedgerTable({
       {/* Simplified, Clean Table Layout: Date | Type | Description & Ref | Account | Debit | Credit | Balance */}
       <div className="overflow-x-auto">
         <table className={`w-full text-xs ${isUrdu ? 'text-right' : 'text-left'}`}>
-          <thead>
-            <tr className="bg-slate-100/80 text-slate-600 font-bold border-b border-slate-200">
+          <thead className="sticky top-0 z-10 bg-slate-100 shadow-xs">
+            <tr className="bg-slate-100/95 backdrop-blur-xs text-slate-700 font-bold border-b border-slate-200">
               <th className="py-2.5 px-3 whitespace-nowrap">{t('col_date')}</th>
               <th className="py-2.5 px-3 whitespace-nowrap">{t('col_type')}</th>
               <th className="py-2.5 px-4">{isUrdu ? 'تفصیل و ریفرنس' : 'Description & Reference'}</th>

@@ -87,13 +87,13 @@ export default function App() {
       />
 
       {/* Main Workspace: Left Sidebar + Dynamic Screen */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden min-h-0">
         <Sidebar
           currentTab={activeTabSafe}
           setTab={setCurrentTab}
         />
 
-        <main className="flex-1 flex overflow-hidden relative">
+        <main className="flex-1 flex overflow-hidden relative min-h-0 min-w-0">
           {activeTabSafe === 'dashboard' && (
             <DashboardScreen onNavigate={setCurrentTab} />
           )}

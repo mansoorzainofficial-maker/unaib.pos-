@@ -175,8 +175,9 @@ export default function Ledger({ initialTab = 'supplier', initialPartyId = null 
   });
 
   return (
-    <div className="p-4 space-y-4 max-w-7xl mx-auto">
-      {/* Top Banner / Tab Switcher */}
+    <div className="flex-1 w-full h-full overflow-y-auto bg-slate-100 p-4 select-text">
+      <div className="max-w-7xl mx-auto space-y-4 pb-16">
+        {/* Top Banner / Tab Switcher */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
         <div className="flex items-center space-x-3">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-700 flex items-center justify-center text-white shadow-md shadow-blue-500/20">
@@ -254,9 +255,9 @@ export default function Ledger({ initialTab = 'supplier', initialPartyId = null 
       )}
 
       {/* Main Grid: Left Party Selector + Right Statement & Actions */}
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 items-start">
         {/* Left Column: Party List */}
-        <div className="lg:col-span-1 bg-white rounded-2xl border border-slate-200 shadow-xs p-3 space-y-3 flex flex-col h-[650px]">
+        <div className="lg:col-span-1 bg-white rounded-2xl border border-slate-200 shadow-xs p-3 space-y-3 flex flex-col max-h-[calc(100vh-140px)] min-h-[500px] sticky top-4">
           <div className="flex items-center justify-between pb-2 border-b border-slate-100">
             <span className="font-bold text-xs text-slate-800">
               {isSupplier ? t('all_suppliers') : t('all_customers')}
@@ -483,6 +484,7 @@ export default function Ledger({ initialTab = 'supplier', initialPartyId = null 
         }}
         onSuccess={(sup, action) => handlePartySaved(sup, 'supplier', action)}
       />
+      </div>
     </div>
   );
 }
