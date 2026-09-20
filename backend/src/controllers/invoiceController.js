@@ -594,10 +594,28 @@ async function getInvoiceDetails(req, res) {
     let invoice = null;
 
     if (isNaN(identifier)) {
-      const row = await get('SELECT id FROM invoices WHERE invoice_number = ?', [identifier]);
+      const cleanIdent = String(identifier).trim();
+      // 1. Exact match case-insensitive
+      let row = await get('SELECT id FROM invoices WHERE LOWER(invoice_number) = LOWER(?)', [cleanIdent]);
+
+      // 2. Fallback: Partial match on invoice_number
+      if (!row) {
+        row = await get('SELECT id FROM invoices WHERE invoice_number LIKE ? COLLATE NOCASE ORDER BY id DESC LIMIT 1', [`%${cleanIdent}%`]);
+      }
+
+      // 3. Fallback: Match by customer name
+      if (!row) {
+        row = await get('SELECT id FROM invoices WHERE customer_name LIKE ? COLLATE NOCASE ORDER BY id DESC LIMIT 1', [`%${cleanIdent}%`]);
+      }
+
       if (row) invoice = await getFullInvoiceDetails(row.id);
     } else {
       invoice = await getFullInvoiceDetails(Number(identifier));
+      // If not found by numeric ID, check if identifier is a partial invoice number (e.g. 0001)
+      if (!invoice) {
+        const row = await get('SELECT id FROM invoices WHERE invoice_number LIKE ? COLLATE NOCASE ORDER BY id DESC LIMIT 1', [`%${identifier}%`]);
+        if (row) invoice = await getFullInvoiceDetails(row.id);
+      }
     }
 
     if (!invoice) {

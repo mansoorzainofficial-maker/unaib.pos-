@@ -185,6 +185,7 @@ export const api = {
     create: (invoiceData) => request('/invoices', { method: 'POST', body: JSON.stringify(invoiceData) }),
     getAll: (params = {}) => request(`/invoices${buildQuery(params)}`),
     getDetails: (idOrNumber) => request(`/invoices/${idOrNumber}`),
+    getById: (idOrNumber) => request(`/invoices/${idOrNumber}`),
     getCustomers: async (params = {}) => {
       let serverCustomers = [];
       try {

@@ -31,6 +31,7 @@ export default function SaleReturnScreen() {
   const [searchInvoice, setSearchInvoice] = useState('');
   const [searching, setSearching] = useState(false);
   const [matchedInvoice, setMatchedInvoice] = useState(null);
+  const [candidateInvoices, setCandidateInvoices] = useState([]);
   
   const [customerId, setCustomerId] = useState('');
   const [customerName, setCustomerName] = useState('');
@@ -89,40 +90,112 @@ export default function SaleReturnScreen() {
     }
   };
 
-  const handleSearchInvoice = async (e) => {
-    e.preventDefault();
-    if (!searchInvoice.trim()) return;
+  const handleSelectInvoice = async (invoiceOrId) => {
+    const id = typeof invoiceOrId === 'object' ? (invoiceOrId.id || invoiceOrId.invoice_number) : invoiceOrId;
     setSearching(true);
     setErrorMsg('');
     try {
-      const res = await api.invoices.getById(searchInvoice.trim());
+      const res = await api.invoices.getDetails(id);
       const inv = res.invoice;
       if (inv) {
         setMatchedInvoice(inv);
+        setCandidateInvoices([]);
         setCustomerId(inv.customer_id || '');
         setCustomerName(inv.customer_name || '');
         setCustomerPhone(inv.customer_phone || '');
+        setCustomerSearchQuery(inv.customer_name || '');
         // Map items from invoice to return choices
         if (Array.isArray(inv.items)) {
           setReturnItems(
-            inv.items.map(it => ({
-              product_id: it.product_id,
-              name: it.product_name,
-              max_qty: it.quantity,
-              quantity: 1,
-              unit_price: it.unit_price,
-              serial_numbers: (it.serial_numbers && it.serial_numbers.length > 0) ? [it.serial_numbers[0]] : []
-            }))
+            inv.items.map(it => {
+              const serial = (Array.isArray(it.serial_numbers) && it.serial_numbers.length > 0)
+                ? (typeof it.serial_numbers[0] === 'object' ? it.serial_numbers[0].serial_number : it.serial_numbers[0])
+                : null;
+              return {
+                product_id: it.product_id,
+                name: it.product_name,
+                max_qty: it.quantity,
+                quantity: 1,
+                unit_price: it.unit_price,
+                serial_numbers: serial ? [serial] : []
+              };
+            })
           );
         }
       } else {
-        setErrorMsg(isUrdu ? 'بل نمبر نہیں ملا۔ آپ نیچے سے براہ راست سامان منتخب کر سکتے ہیں۔' : 'Invoice not found. You can pick products manually.');
+        setErrorMsg(isUrdu ? 'بل کی تفصیلات لوڈ نہ ہو سکیں۔' : 'Could not load invoice details.');
       }
     } catch (err) {
+      console.error('Select invoice error:', err);
+      setErrorMsg(isUrdu ? 'بل کی تفصیلات لوڈ کرنے میں غلطی ہوئی۔' : 'Error loading invoice details.');
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const handleSearchInvoice = async (e) => {
+    e.preventDefault();
+    const query = searchInvoice.trim();
+    if (!query) return;
+
+    setSearching(true);
+    setErrorMsg('');
+    setCandidateInvoices([]);
+    setMatchedInvoice(null);
+
+    try {
+      // 1. Search across invoices by invoice_number, customer_name, and phone
+      const listRes = await api.invoices.getAll({ search: query, limit: 10 });
+      const foundInvoices = listRes.invoices || [];
+
+      if (foundInvoices.length === 1) {
+        // Exactly one match - load it immediately!
+        await handleSelectInvoice(foundInvoices[0].id);
+      } else if (foundInvoices.length > 1) {
+        // Multiple matches (e.g. party name with multiple bills) - let user pick!
+        setCandidateInvoices(foundInvoices);
+      } else {
+        // Fallback: direct lookup by getDetails (in case of exact ID or number)
+        try {
+          const directRes = await api.invoices.getDetails(query);
+          if (directRes && directRes.invoice) {
+            await handleSelectInvoice(directRes.invoice.id);
+            return;
+          }
+        } catch (_) {}
+
+        setErrorMsg(
+          isUrdu
+            ? `بل نمبر یا پارٹی کے نام "${query}" کا کوئی بل نہیں ملا۔ آپ نیچے سے براہ راست سامان منتخب کر سکتے ہیں۔`
+            : `No invoice found matching "${query}". You can pick products manually below.`
+        );
+      }
+    } catch (err) {
+      console.error('Invoice search error:', err);
+      // Fallback to direct getDetails
+      try {
+        const directRes = await api.invoices.getDetails(query);
+        if (directRes && directRes.invoice) {
+          await handleSelectInvoice(directRes.invoice.id);
+          return;
+        }
+      } catch (_) {}
+
       setErrorMsg(isUrdu ? 'بل تلاش کرنے میں غلطی ہوئی۔' : 'Error searching invoice.');
     } finally {
       setSearching(false);
     }
+  };
+
+  const handleClearMatchedInvoice = () => {
+    setMatchedInvoice(null);
+    setCandidateInvoices([]);
+    setSearchInvoice('');
+    setReturnItems([]);
+    setCustomerId('');
+    setCustomerName('');
+    setCustomerPhone('');
+    setCustomerSearchQuery('');
   };
 
   const handleAddManualItem = (productId) => {
@@ -313,17 +386,17 @@ export default function SaleReturnScreen() {
             </div>
           )}
 
-          {/* Section 1: Search Existing Invoice */}
+          {/* Section 1: Search Existing Invoice by Number or Party */}
           <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
-            <h2 className="text-xs font-black uppercase text-slate-400 tracking-wider mb-3">
-              {isUrdu ? '۱۔ بل نمبر تلاش کریں (اختیاری):' : '1. Search Invoice (Optional):'}
+            <h2 className="text-xs font-black uppercase text-slate-500 tracking-wider mb-3">
+              {isUrdu ? '۱۔ بل نمبر یا گاہک / پارٹی کے نام سے تلاش کریں (اختیاری):' : '1. Search by Invoice No or Party / Customer Name (Optional):'}
             </h2>
             <form onSubmit={handleSearchInvoice} className="flex gap-3">
               <div className="relative flex-1">
                 <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
                 <input
                   type="text"
-                  placeholder={isUrdu ? 'بل نمبر درج کریں (مثلاً: UCA-20260915-0001)...' : 'Enter Invoice No (e.g. UCA-20260915-0001)...'}
+                  placeholder={isUrdu ? 'بل نمبر (مثلاً: UCA-20260920-0001 یا 0001) یا گاہک کا نام یا فون درج کریں...' : 'Enter Invoice No (e.g. UCA-20260920-0001 or 0001), Customer Name, or Phone...'}
                   value={searchInvoice}
                   onChange={(e) => setSearchInvoice(e.target.value)}
                   className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:bg-white focus:border-amber-500 focus:outline-none transition-all"
@@ -345,17 +418,75 @@ export default function SaleReturnScreen() {
               </button>
             </form>
 
-            {matchedInvoice && (
-              <div className="mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between text-xs text-emerald-800">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                  <span>
-                    <strong>{matchedInvoice.invoice_number}</strong> ({matchedInvoice.customer_name || 'Walk-in'}) - Total: Rs. {Number(matchedInvoice.grand_total).toLocaleString()}
-                  </span>
+            {/* Candidate Invoices List (when multiple matches found, e.g. Party Name) */}
+            {candidateInvoices && candidateInvoices.length > 1 && (
+              <div className="mt-4 p-4 bg-amber-50/70 border border-amber-200 rounded-xl space-y-3 animate-in fade-in">
+                <div className="flex items-center justify-between text-xs font-bold text-amber-900">
+                  <span>{isUrdu ? `اس نام/نمبر سے ${candidateInvoices.length} بل ملے، واپسی کے لیے مطلوبہ بل منتخب کریں:` : `Found ${candidateInvoices.length} matching invoices. Pick one to return:`}</span>
+                  <button
+                    type="button"
+                    onClick={() => setCandidateInvoices([])}
+                    className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-amber-100 transition-colors cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
                 </div>
-                <span className="font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">
-                  {matchedInvoice.items ? `${matchedInvoice.items.length} items loaded` : 'Loaded'}
-                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
+                  {candidateInvoices.map((inv) => (
+                    <div
+                      key={inv.id}
+                      onClick={() => handleSelectInvoice(inv.id)}
+                      className="p-3 bg-white hover:bg-amber-50 border border-slate-200 hover:border-amber-400 rounded-xl cursor-pointer transition-all shadow-2xs group flex flex-col justify-between space-y-2"
+                    >
+                      <div>
+                        <div className="flex items-center justify-between">
+                          <span className="font-mono font-bold text-blue-700 text-xs">{inv.invoice_number}</span>
+                          <span className="font-mono font-bold text-slate-900 text-xs">Rs. {Number(inv.grand_total).toLocaleString()}</span>
+                        </div>
+                        <div className="text-xs font-bold text-slate-800 mt-1 truncate">{inv.customer_name || (isUrdu ? 'عام واک ان گاہک' : 'Walk-in')}</div>
+                        {inv.customer_phone && <div className="text-[11px] text-slate-400 font-mono">{inv.customer_phone}</div>}
+                        <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                          {inv.created_at ? new Date(inv.created_at).toLocaleDateString('en-PK') : ''}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="w-full py-1.5 bg-amber-500 group-hover:bg-amber-600 text-white rounded-lg text-[11px] font-bold transition-colors cursor-pointer"
+                      >
+                        {isUrdu ? 'یہ بل منتخب کریں ✓' : 'Select Invoice ✓'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Matched Invoice Banner */}
+            {matchedInvoice && (
+              <div className="mt-4 p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between text-xs text-emerald-900 animate-in fade-in">
+                <div className="flex items-center gap-2.5">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-mono font-bold text-emerald-950 text-sm">{matchedInvoice.invoice_number}</span>
+                      <span className="text-emerald-700 font-bold">• {matchedInvoice.customer_name || (isUrdu ? 'عام واک ان گاہک' : 'Walk-in')}</span>
+                      {matchedInvoice.customer_phone && <span className="text-[11px] text-emerald-600 font-mono">({matchedInvoice.customer_phone})</span>}
+                    </div>
+                    <div className="text-[11px] text-emerald-700 font-medium mt-0.5">
+                      {isUrdu ? 'کل رقم: ' : 'Total: '}
+                      <strong className="font-mono">Rs. {Number(matchedInvoice.grand_total).toLocaleString()}</strong>
+                      {matchedInvoice.items ? ` • ${matchedInvoice.items.length} ${isUrdu ? 'آئٹمز شامل کر دیے گئے' : 'items loaded'}` : ''}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleClearMatchedInvoice}
+                  className="px-3 py-1.5 bg-white hover:bg-rose-50 text-slate-600 hover:text-rose-700 border border-slate-200 hover:border-rose-200 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 shrink-0"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>{isUrdu ? 'بل تبدیل کریں' : 'Change Bill'}</span>
+                </button>
               </div>
             )}
           </div>
