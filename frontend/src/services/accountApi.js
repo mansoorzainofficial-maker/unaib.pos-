@@ -24,6 +24,13 @@ export const accountApi = {
     return data.account;
   },
 
+  getStatement: async (id) => {
+    const res = await fetch(`${API_BASE}/${id}/statement`, { headers: getHeaders() });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to fetch statement');
+    return data.statement;
+  },
+
   create: async (payload) => {
     const res = await fetch(API_BASE, {
       method: 'POST',

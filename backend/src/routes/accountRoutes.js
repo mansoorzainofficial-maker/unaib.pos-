@@ -13,6 +13,7 @@ function authFlexible(req, res, next) {
 
 router.get('/', authFlexible, accountController.getAccounts);
 router.get('/:id', authFlexible, accountController.getAccountById);
+router.get('/:id/statement', authFlexible, accountController.getAccountStatement);
 router.post('/', authFlexible, accountController.createAccount);
 router.put('/:id', authFlexible, accountController.updateAccount);
 router.delete('/:id', authFlexible, accountController.deleteAccount);

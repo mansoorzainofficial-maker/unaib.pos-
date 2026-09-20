@@ -173,6 +173,87 @@ class Account {
     return (ledgerCount + txCount) > 0;
   }
 
+  static async getStatement(id) {
+    const account = await this.getById(id);
+    if (!account) return null;
+
+    const liveBal = await this.calculateBalance(account);
+
+    const rows = await query(`
+      SELECT 
+        al.id,
+        al.account_id,
+        al.entry_type,
+        al.reference_no,
+        al.debit,
+        al.credit,
+        al.balance_after,
+        al.description,
+        al.created_at,
+        le.party_type,
+        le.party_id,
+        le.description AS party_notes,
+        CASE 
+          WHEN le.party_type IN ('client', 'customer') THEN c.name
+          WHEN le.party_type = 'supplier' THEN s.name
+          ELSE NULL
+        END AS party_name,
+        CASE 
+          WHEN le.party_type IN ('client', 'customer') THEN c.phone
+          WHEN le.party_type = 'supplier' THEN s.phone
+          ELSE NULL
+        END AS party_phone
+      FROM accounts_ledger al
+      LEFT JOIN ledger_entries le ON al.reference_no = le.reference_no AND le.account_id = al.account_id
+      LEFT JOIN customers c ON le.party_id = c.id AND le.party_type IN ('client', 'customer')
+      LEFT JOIN suppliers s ON le.party_id = s.id AND le.party_type = 'supplier'
+      WHERE al.account_id = ?
+      ORDER BY al.created_at ASC, al.id ASC
+    `, [id]);
+
+    let totalInflow = 0;
+    let totalOutflow = 0;
+    const entries = rows.map(r => {
+      const debit = Number(r.debit) || 0;
+      const credit = Number(r.credit) || 0;
+      totalInflow += debit;
+      totalOutflow += credit;
+      return {
+        id: r.id,
+        account_id: r.account_id,
+        entry_type: r.entry_type,
+        reference_no: r.reference_no,
+        debit: Math.round(debit * 100) / 100,
+        credit: Math.round(credit * 100) / 100,
+        balance_after: Math.round((Number(r.balance_after) || 0) * 100) / 100,
+        description: r.description,
+        created_at: r.created_at,
+        party_type: r.party_type || null,
+        party_id: r.party_id || null,
+        party_name: r.party_name || null,
+        party_phone: r.party_phone || null,
+        party_notes: r.party_notes || null
+      };
+    });
+
+    const openingBalance = Math.round(((Number(liveBal) || 0) - totalInflow + totalOutflow) * 100) / 100;
+
+    return {
+      account: {
+        ...account,
+        current_balance: liveBal
+      },
+      summary: {
+        opening_balance: openingBalance,
+        total_inflow: Math.round(totalInflow * 100) / 100,
+        total_outflow: Math.round(totalOutflow * 100) / 100,
+        net_change: Math.round((totalInflow - totalOutflow) * 100) / 100,
+        current_balance: liveBal
+      },
+      entries
+    };
+  }
+
   static async delete(id) {
     return await run('DELETE FROM accounts WHERE id = ?', [id]);
   }

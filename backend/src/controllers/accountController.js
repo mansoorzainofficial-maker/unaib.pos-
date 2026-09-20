@@ -238,9 +238,46 @@ async function deleteAccount(req, res) {
   }
 }
 
+/**
+ * Get account statement / passbook ledger
+ * GET /api/accounts/:id/statement
+ */
+async function getAccountStatement(req, res) {
+  try {
+    const id = Number(req.params.id);
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid account ID'
+      });
+    }
+
+    const statement = await Account.getStatement(id);
+    if (!statement) {
+      return res.status(404).json({
+        success: false,
+        error: 'Account not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      statement
+    });
+  } catch (err) {
+    console.error('Error in getAccountStatement:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch account statement',
+      message: err.message
+    });
+  }
+}
+
 module.exports = {
   getAccounts,
   getAccountById,
+  getAccountStatement,
   createAccount,
   updateAccount,
   deleteAccount
