@@ -51,27 +51,52 @@ export default function CustomerForm({
 
     setIsSubmitting(true);
     try {
-      const res = await api.invoices.createCustomer({
-        name: formData.name.trim(),
-        phone: formData.phone ? formData.phone.trim() : '',
-        address: formData.address ? formData.address.trim() : '',
-        opening_balance: Number(formData.opening_balance) || 0
-      });
+      if (customer && customer.id) {
+        // Update existing customer
+        const res = await api.invoices.updateCustomer(customer.id, {
+          name: formData.name.trim(),
+          phone: formData.phone ? formData.phone.trim() : '',
+          address: formData.address ? formData.address.trim() : ''
+        });
 
-      if (res && res.success) {
-        const savedCustomer = res.customer || {
-          id: res.customerId || Date.now(),
+        if (res && res.success) {
+          const savedCustomer = res.customer || {
+            ...customer,
+            name: formData.name.trim(),
+            phone: formData.phone ? formData.phone.trim() : '',
+            address: formData.address ? formData.address.trim() : ''
+          };
+          if (onSuccess) {
+            onSuccess(savedCustomer, 'updated');
+          }
+          onClose();
+        } else {
+          throw new Error(res?.message || 'Failed to update customer');
+        }
+      } else {
+        // Create new customer
+        const res = await api.invoices.createCustomer({
           name: formData.name.trim(),
           phone: formData.phone ? formData.phone.trim() : '',
           address: formData.address ? formData.address.trim() : '',
-          current_balance: Number(formData.opening_balance) || 0
-        };
-        if (onSuccess) {
-          onSuccess(savedCustomer, customer ? 'updated' : 'created');
+          opening_balance: Number(formData.opening_balance) || 0
+        });
+
+        if (res && res.success) {
+          const savedCustomer = res.customer || {
+            id: res.customerId || Date.now(),
+            name: formData.name.trim(),
+            phone: formData.phone ? formData.phone.trim() : '',
+            address: formData.address ? formData.address.trim() : '',
+            current_balance: Number(formData.opening_balance) || 0
+          };
+          if (onSuccess) {
+            onSuccess(savedCustomer, 'created');
+          }
+          onClose();
+        } else {
+          throw new Error(res?.message || 'Failed to save customer');
         }
-        onClose();
-      } else {
-        throw new Error(res?.message || 'Failed to save customer');
       }
     } catch (err) {
       setErrorMsg(err.message || 'Failed to save customer');
@@ -141,25 +166,27 @@ export default function CustomerForm({
             </div>
           </div>
 
-          {/* Opening Balance / Previous Udhar */}
-          <div>
-            <label className="block font-bold text-slate-800 mb-1 flex items-center justify-between">
-              <span>{t('customer_field_opening_balance')}</span>
-              <span className="text-[10px] text-slate-400">اگر پہلے سے کوئی ادھار ہو</span>
-            </label>
-            <div className="relative">
-              <Wallet className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-              <input
-                type="number"
-                min="0"
-                step="any"
-                value={formData.opening_balance}
-                onChange={(e) => setFormData({ ...formData, opening_balance: e.target.value })}
-                placeholder={t('customer_ph_opening_balance')}
-                className="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-xl text-slate-900 font-mono font-bold focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-hidden"
-              />
+          {/* Opening Balance / Previous Udhar (Only for new customer) */}
+          {!customer && (
+            <div>
+              <label className="block font-bold text-slate-800 mb-1 flex items-center justify-between">
+                <span>{t('customer_field_opening_balance')}</span>
+                <span className="text-[10px] text-slate-400">اگر پہلے سے کوئی ادھار ہو</span>
+              </label>
+              <div className="relative">
+                <Wallet className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={formData.opening_balance}
+                  onChange={(e) => setFormData({ ...formData, opening_balance: e.target.value })}
+                  placeholder={t('customer_ph_opening_balance')}
+                  className="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-xl text-slate-900 font-mono font-bold focus:border-blue-500 focus:ring-2 focus:ring-blue-200 focus:outline-hidden"
+                />
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Address / Market */}
           <div>
@@ -206,7 +233,9 @@ export default function CustomerForm({
               ) : (
                 <>
                   <CheckCircle2 className="w-4 h-4" />
-                  <span>{t('customer_btn_save_new')}</span>
+                  <span>
+                    {customer ? (isUrdu ? 'تبدیلیاں محفوظ کریں' : 'Save Changes') : t('customer_btn_save_new')}
+                  </span>
                 </>
               )}
             </button>

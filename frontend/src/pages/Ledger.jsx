@@ -10,8 +10,12 @@ import {
   RefreshCw,
   Wallet,
   Building2,
-  CheckCircle2
+  CheckCircle2,
+  Edit,
+  Trash2
 } from 'lucide-react';
+import { api } from '../services/api';
+import { supplierApi } from '../services/supplierApi';
 import { ledgerApi } from '../services/ledgerApi';
 import LedgerTable from '../components/LedgerTable';
 import PaymentForm from '../components/PaymentForm';
@@ -30,20 +34,57 @@ export default function Ledger({ initialTab = 'supplier', initialPartyId = null 
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
   const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false);
+  const [editingParty, setEditingParty] = useState(null);
   const [partySearch, setPartySearch] = useState('');
   const [notification, setNotification] = useState('');
+  const [errorNotification, setErrorNotification] = useState('');
 
-  const handlePartyCreated = (newParty, type) => {
+  const handlePartySaved = (savedParty, type, action) => {
     loadParties();
-    if (newParty && newParty.id) {
-      setSelectedPartyId(newParty.id);
-      loadStatement(activeTab, newParty.id);
+    if (savedParty && savedParty.id) {
+      setSelectedPartyId(savedParty.id);
+      loadStatement(activeTab, savedParty.id);
     }
+    const isEdit = action === 'updated';
     setNotification(type === 'supplier'
-      ? (isUrdu ? `✓ نیا سپلائر "${newParty.name}" کامیابی سے رجسٹر ہو گیا!` : `✓ Supplier "${newParty.name}" registered successfully!`)
-      : (isUrdu ? `✓ نیا گاہک "${newParty.name}" کامیابی سے رجسٹر ہو گیا!` : `✓ Customer "${newParty.name}" registered successfully!`)
+      ? (isUrdu 
+          ? (isEdit ? `✓ سپلائر "${savedParty.name}" کی تفصیلات کامیابی سے اپڈیٹ ہو گئیں!` : `✓ نیا سپلائر "${savedParty.name}" کامیابی سے رجسٹر ہو گیا!`)
+          : (isEdit ? `✓ Supplier "${savedParty.name}" updated successfully!` : `✓ Supplier "${savedParty.name}" registered successfully!`))
+      : (isUrdu 
+          ? (isEdit ? `✓ گاہک "${savedParty.name}" کی تفصیلات کامیابی سے اپڈیٹ ہو گئیں!` : `✓ نیا گاہک "${savedParty.name}" کامیابی سے رجسٹر ہو گیا!`)
+          : (isEdit ? `✓ Customer "${savedParty.name}" updated successfully!` : `✓ Customer "${savedParty.name}" registered successfully!`))
     );
     setTimeout(() => setNotification(''), 5000);
+  };
+
+  const handleDeleteParty = async () => {
+    if (!selectedParty) return;
+
+    const confirmPrompt = isUrdu 
+      ? `کیا آپ واقعی ${isSupplier ? 'سپلائر' : 'گاہک'} "${selectedParty.name}" کو ڈیلیٹ کرنا چاہتے ہیں؟`
+      : `Are you sure you want to delete ${isSupplier ? 'supplier' : 'customer'} "${selectedParty.name}"?`;
+
+    if (!window.confirm(confirmPrompt)) return;
+
+    try {
+      if (isSupplier) {
+        await supplierApi.delete(selectedParty.id);
+      } else {
+        await api.invoices.deleteCustomer(selectedParty.id);
+      }
+
+      setNotification(isUrdu 
+        ? `✓ ${isSupplier ? 'سپلائر' : 'گاہک'} "${selectedParty.name}" کامیابی سے ڈیلیٹ ہو گیا۔`
+        : `✓ ${isSupplier ? 'Supplier' : 'Customer'} "${selectedParty.name}" deleted successfully.`
+      );
+      setSelectedPartyId('');
+      setStatement(null);
+      loadParties();
+      setTimeout(() => setNotification(''), 5000);
+    } catch (err) {
+      setErrorNotification(err.message || (isUrdu ? 'ڈیلیٹ کرنے میں رکاوٹ پیش آئی۔' : 'Failed to delete'));
+      setTimeout(() => setErrorNotification(''), 8000);
+    }
   };
 
   // Sync when initialTab or initialPartyId props change
@@ -183,7 +224,11 @@ export default function Ledger({ initialTab = 'supplier', initialPartyId = null 
 
           {/* Quick Add Party Button */}
           <button
-            onClick={() => isSupplier ? setIsSupplierModalOpen(true) : setIsCustomerModalOpen(true)}
+            onClick={() => {
+              setEditingParty(null);
+              if (isSupplier) setIsSupplierModalOpen(true);
+              else setIsCustomerModalOpen(true);
+            }}
             className="flex items-center space-x-1.5 px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs shadow-md shadow-blue-600/20 transition-all cursor-pointer shrink-0"
           >
             <Plus className="w-4 h-4" />
@@ -200,6 +245,14 @@ export default function Ledger({ initialTab = 'supplier', initialPartyId = null 
         </div>
       )}
 
+      {/* Error Notification Alert */}
+      {errorNotification && (
+        <div className="p-3 bg-rose-50 border border-rose-300 rounded-xl text-rose-800 text-xs font-bold flex items-center space-x-2 animate-in fade-in">
+          <span className="text-sm">⚠️</span>
+          <span>{errorNotification}</span>
+        </div>
+      )}
+
       {/* Main Grid: Left Party Selector + Right Statement & Actions */}
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
         {/* Left Column: Party List */}
@@ -211,7 +264,11 @@ export default function Ledger({ initialTab = 'supplier', initialPartyId = null 
             <div className="flex items-center gap-1.5">
               <button
                 type="button"
-                onClick={() => isSupplier ? setIsSupplierModalOpen(true) : setIsCustomerModalOpen(true)}
+                onClick={() => {
+                  setEditingParty(null);
+                  if (isSupplier) setIsSupplierModalOpen(true);
+                  else setIsCustomerModalOpen(true);
+                }}
                 className="text-[10px] font-bold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded-lg border border-blue-200 transition-colors flex items-center gap-1 cursor-pointer"
                 title={isSupplier ? t('suppliers_add_btn') : t('customer_quick_add')}
               >
@@ -306,6 +363,30 @@ export default function Ledger({ initialTab = 'supplier', initialPartyId = null 
                   <span>{isSupplier ? t('btn_record_payment') : t('btn_receive_payment')}</span>
                 </button>
 
+                {selectedParty && (
+                  <>
+                    <button
+                      onClick={() => {
+                        setEditingParty(selectedParty);
+                        if (isSupplier) setIsSupplierModalOpen(true);
+                        else setIsCustomerModalOpen(true);
+                      }}
+                      title={isUrdu ? `${isSupplier ? 'سپلائر' : 'گاہک'} کی معلومات میں ترمیم کریں` : 'Edit'}
+                      className="p-2 text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 rounded-xl border border-blue-200 transition-colors cursor-pointer"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </button>
+
+                    <button
+                      onClick={handleDeleteParty}
+                      title={isUrdu ? `${isSupplier ? 'سپلائر' : 'گاہک'} حذف کریں` : 'Delete'}
+                      className="p-2 text-rose-600 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 rounded-xl border border-rose-200 transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </>
+                )}
+
                 <button
                   onClick={() => loadStatement(activeTab, selectedPartyId)}
                   title={isUrdu ? "ریفریش کریں" : "Refresh"}
@@ -379,18 +460,26 @@ export default function Ledger({ initialTab = 'supplier', initialPartyId = null 
         onSuccess={handlePaymentSuccess}
       />
 
-      {/* Unified Add Customer Modal */}
+      {/* Unified Customer Form Modal (Add / Edit) */}
       <CustomerForm
         isOpen={isCustomerModalOpen}
-        onClose={() => setIsCustomerModalOpen(false)}
-        onSuccess={(cust) => handlePartyCreated(cust, 'client')}
+        customer={editingParty}
+        onClose={() => {
+          setIsCustomerModalOpen(false);
+          setEditingParty(null);
+        }}
+        onSuccess={(cust, action) => handlePartySaved(cust, 'client', action)}
       />
 
-      {/* Unified Add Supplier Modal */}
+      {/* Unified Supplier Form Modal (Add / Edit) */}
       <SupplierForm
         isOpen={isSupplierModalOpen}
-        onClose={() => setIsSupplierModalOpen(false)}
-        onSuccess={(sup) => handlePartyCreated(sup, 'supplier')}
+        supplier={editingParty}
+        onClose={() => {
+          setIsSupplierModalOpen(false);
+          setEditingParty(null);
+        }}
+        onSuccess={(sup, action) => handlePartySaved(sup, 'supplier', action)}
       />
     </div>
   );

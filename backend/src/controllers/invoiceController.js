@@ -704,6 +704,131 @@ async function createCustomer(req, res) {
 }
 
 /**
+ * Update an existing customer record
+ * PUT /api/invoices/meta/customers/:id
+ */
+async function updateCustomer(req, res) {
+  try {
+    const customerId = Number(req.params.id);
+    const { name, phone, email, address } = req.body;
+
+    if (!name || !name.trim()) {
+      return res.status(400).json({ success: false, message: 'گاہک کا نام لازمی ہے (Customer name is required)' });
+    }
+
+    const existing = await get('SELECT * FROM customers WHERE id = ?', [customerId]);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'کسٹمر ریکارڈ نہیں ملا (Customer not found)' });
+    }
+
+    await run(`
+      UPDATE customers 
+      SET 
+        name = ?,
+        phone = ?,
+        email = ?,
+        address = ?
+      WHERE id = ?
+    `, [
+      name.trim(),
+      phone ? phone.trim() : null,
+      email ? email.trim() : null,
+      address ? address.trim() : null,
+      customerId
+    ]);
+
+    const updated = await get('SELECT * FROM customers WHERE id = ?', [customerId]);
+
+    await logActivity({
+      userId: req.user ? req.user.id : null,
+      username: req.user ? req.user.username : 'Admin',
+      action: 'customer_update',
+      description: `گاہک کی تفصیلات میں ترمیم: ${name.trim()} (ID: ${customerId})`
+    });
+
+    return res.json({
+      success: true,
+      message: 'Customer updated successfully',
+      customer: updated
+    });
+  } catch (error) {
+    console.error('updateCustomer error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+/**
+ * Delete a customer with comprehensive safety checks
+ * DELETE /api/invoices/meta/customers/:id
+ */
+async function deleteCustomer(req, res) {
+  try {
+    const customerId = Number(req.params.id);
+    const existing = await get('SELECT * FROM customers WHERE id = ?', [customerId]);
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'کسٹمر ریکارڈ نہیں ملا (Customer not found)' });
+    }
+
+    // 1. Check if customer has non-zero balance
+    const currentBal = Number(existing.current_balance) || 0;
+    if (Math.abs(currentBal) > 0.01) {
+      return res.status(400).json({
+        success: false,
+        message: `کسٹمر "${existing.name}" کو ڈیلیٹ نہیں کیا جا سکتا کیونکہ اس کے کھاتے میں Rs. ${currentBal.toLocaleString()} بقایا ادھار/بیلنس موجود ہے۔ برائے مہربانی پہلے کھاتہ صفر (0) کریں۔`
+      });
+    }
+
+    // 2. Check sales invoices
+    const invCheck = await get('SELECT COUNT(*) as count FROM invoices WHERE customer_id = ?', [customerId]);
+    if (invCheck && Number(invCheck.count) > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `کسٹمر "${existing.name}" کو ڈیلیٹ نہیں کیا جا سکتا کیونکہ اس کے نام پر ${invCheck.count} عدد سابقہ بل/رسیدیں موجود ہیں۔`
+      });
+    }
+
+    // 3. Check ledger entries
+    const ledgerCheck = await get(
+      "SELECT COUNT(*) as count FROM ledger_entries WHERE party_type IN ('client', 'customer') AND party_id = ?",
+      [customerId]
+    );
+    if (ledgerCheck && Number(ledgerCheck.count) > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `کسٹمر "${existing.name}" کے کھاتے (Ledger) میں سابقہ ٹرانزیکشن کی ہسٹری موجود ہے، اس لیے اسے ڈیلیٹ نہیں کیا جا سکتا۔`
+      });
+    }
+
+    // 4. Check warranty claims or assigned serials
+    const warrantyCheck = await get('SELECT COUNT(*) as count FROM serial_numbers WHERE customer_id = ?', [customerId]);
+    if (warrantyCheck && Number(warrantyCheck.count) > 0) {
+      return res.status(400).json({
+        success: false,
+        message: `کسٹمر "${existing.name}" کے نام پر وارنٹی سیریل نمبرز منسلک ہیں۔`
+      });
+    }
+
+    // 5. Safe to delete
+    await run('DELETE FROM customers WHERE id = ?', [customerId]);
+
+    await logActivity({
+      userId: req.user ? req.user.id : null,
+      username: req.user ? req.user.username : 'Admin',
+      action: 'customer_delete',
+      description: `گاہک ڈیلیٹ کیا گیا: ${existing.name} (ID: ${customerId})`
+    });
+
+    return res.json({
+      success: true,
+      message: `گاہک "${existing.name}" کامیابی سے ڈیلیٹ ہو گیا۔`
+    });
+  } catch (error) {
+    console.error('deleteCustomer error:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+/**
  * Void / Cancel a POS Sale Invoice (Atomic rollback)
  */
 async function voidInvoice(req, res) {
@@ -894,6 +1019,8 @@ module.exports = {
   getFullInvoiceDetails,
   getCustomers,
   createCustomer,
+  updateCustomer,
+  deleteCustomer,
   voidInvoice,
   deleteInvoice
 };

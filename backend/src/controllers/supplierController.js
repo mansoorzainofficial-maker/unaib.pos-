@@ -140,6 +140,13 @@ async function updateSupplier(req, res) {
       address: address ? address.trim() : null
     });
 
+    await logActivity({
+      userId: req.user ? req.user.id : null,
+      username: req.user ? req.user.username : 'Admin',
+      action: 'supplier_update',
+      description: `سپلائر کی تفصیلات میں ترمیم: ${name.trim()} (ID: ${id})`
+    });
+
     res.json({
       success: true,
       message: 'Supplier updated successfully',
@@ -149,7 +156,8 @@ async function updateSupplier(req, res) {
     console.error('Error updating supplier:', err);
     res.status(400).json({
       success: false,
-      error: err.message || 'Failed to update supplier'
+      error: err.message || 'Failed to update supplier',
+      message: err.message || 'Failed to update supplier'
     });
   }
 }
@@ -165,21 +173,30 @@ async function deleteSupplier(req, res) {
     if (!existing) {
       return res.status(404).json({
         success: false,
-        error: 'Supplier not found'
+        error: 'Supplier not found',
+        message: 'Supplier not found'
       });
     }
 
     await Supplier.delete(id);
 
+    await logActivity({
+      userId: req.user ? req.user.id : null,
+      username: req.user ? req.user.username : 'Admin',
+      action: 'supplier_delete',
+      description: `سپلائر حذف کیا گیا: ${existing.name} (ID: ${id})`
+    });
+
     res.json({
       success: true,
-      message: 'Supplier deleted successfully'
+      message: `سپلائر "${existing.name}" کامیابی سے ڈیلیٹ ہو گیا۔`
     });
   } catch (err) {
     console.error('Error deleting supplier:', err);
     res.status(400).json({
       success: false,
-      error: err.message || 'Failed to delete supplier'
+      error: err.message || 'Failed to delete supplier',
+      message: err.message || 'Failed to delete supplier'
     });
   }
 }

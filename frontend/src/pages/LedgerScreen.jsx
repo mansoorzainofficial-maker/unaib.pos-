@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { api } from '../services/api';
+import { supplierApi } from '../services/supplierApi';
 import Modal from '../components/Modal';
 import { useLanguage } from '../context/LanguageContext';
 import {
@@ -28,7 +29,9 @@ import {
   Phone,
   MapPin,
   Clock,
-  Download
+  Download,
+  Edit,
+  Trash2
 } from 'lucide-react';
 
 export default function LedgerScreen({ initialTab = 'customers' }) {
@@ -75,6 +78,7 @@ export default function LedgerScreen({ initialTab = 'customers' }) {
 
   // Add party modal state
   const [isAddPartyOpen, setIsAddPartyOpen] = useState(false);
+  const [editingParty, setEditingParty] = useState(null);
   const [partyForm, setPartyForm] = useState({
     name: '',
     phone: '',
@@ -153,38 +157,130 @@ export default function LedgerScreen({ initialTab = 'customers' }) {
     }
   };
 
+  const handleOpenAddParty = () => {
+    setEditingParty(null);
+    setPartyForm({ name: '', phone: '', extra: '', address: '', opening_balance: 0 });
+    setIsAddPartyOpen(true);
+  };
+
+  const handleOpenEditParty = (party) => {
+    if (!party) return;
+    setEditingParty(party);
+    setPartyForm({
+      name: party.name || '',
+      phone: party.phone || '',
+      extra: party.contact_person || party.email || '',
+      address: party.address || '',
+      opening_balance: party.current_balance || 0
+    });
+    setIsAddPartyOpen(true);
+  };
+
+  const handleDeleteParty = async () => {
+    if (!selectedParty) return;
+    const isCustomer = activeTab === 'customers';
+    const confirmPrompt = isUrdu
+      ? `کیا آپ واقعی ${isCustomer ? 'گاہک' : 'سپلائر'} "${selectedParty.name}" کو ڈیلیٹ کرنا چاہتے ہیں؟`
+      : `Are you sure you want to delete ${isCustomer ? 'customer' : 'supplier'} "${selectedParty.name}"?`;
+
+    if (!window.confirm(confirmPrompt)) return;
+
+    try {
+      if (isCustomer) {
+        await api.invoices.deleteCustomer(selectedParty.id);
+      } else {
+        await supplierApi.delete(selectedParty.id);
+      }
+      alert(isUrdu ? `✓ ${isCustomer ? 'گاہک' : 'سپلائر'} کامیابی سے ڈیلیٹ ہو گیا۔` : 'Deleted successfully');
+      setSelectedParty(null);
+      setStatementData(null);
+      await loadParties();
+      await loadSummary();
+    } catch (err) {
+      alert(err.message || (isUrdu ? 'ڈیلیٹ کرنے میں رکاوٹ پیش آئی۔' : 'Failed to delete'));
+    }
+  };
+
   const handleAddPartySubmit = async (e) => {
     e.preventDefault();
     if (!partyForm.name.trim()) return;
     setPartySubmitting(true);
     try {
-      if (activeTab === 'customers') {
-        const res = await api.invoices.createCustomer({
-          name: partyForm.name,
-          phone: partyForm.phone,
-          email: partyForm.extra,
-          address: partyForm.address,
-          opening_balance: Number(partyForm.opening_balance) || 0
-        });
-        if (res.success) {
+      if (editingParty) {
+        // Edit Mode
+        if (activeTab === 'customers') {
+          const res = await api.invoices.updateCustomer(editingParty.id, {
+            name: partyForm.name.trim(),
+            phone: partyForm.phone ? partyForm.phone.trim() : '',
+            address: partyForm.address ? partyForm.address.trim() : ''
+          });
+          if (res.success) {
+            setIsAddPartyOpen(false);
+            setEditingParty(null);
+            setPartyForm({ name: '', phone: '', extra: '', address: '', opening_balance: 0 });
+            await loadParties();
+            await loadSummary();
+            if (selectedParty?.id === editingParty.id) {
+              handleOpenPartyStatement({
+                ...selectedParty,
+                name: partyForm.name.trim(),
+                phone: partyForm.phone ? partyForm.phone.trim() : '',
+                address: partyForm.address ? partyForm.address.trim() : ''
+              });
+            }
+          }
+        } else {
+          await supplierApi.update(editingParty.id, {
+            name: partyForm.name.trim(),
+            contact_person: partyForm.extra ? partyForm.extra.trim() : null,
+            phone: partyForm.phone ? partyForm.phone.trim() : null,
+            address: partyForm.address ? partyForm.address.trim() : null
+          });
           setIsAddPartyOpen(false);
+          setEditingParty(null);
           setPartyForm({ name: '', phone: '', extra: '', address: '', opening_balance: 0 });
           await loadParties();
           await loadSummary();
+          if (selectedParty?.id === editingParty.id) {
+            handleOpenPartyStatement({
+              ...selectedParty,
+              name: partyForm.name.trim(),
+              contact_person: partyForm.extra ? partyForm.extra.trim() : null,
+              phone: partyForm.phone ? partyForm.phone.trim() : null,
+              address: partyForm.address ? partyForm.address.trim() : null
+            });
+          }
         }
       } else {
-        const res = await api.products.createSupplier({
-          name: partyForm.name,
-          phone: partyForm.phone,
-          contact_person: partyForm.extra,
-          address: partyForm.address,
-          opening_balance: Number(partyForm.opening_balance) || 0
-        });
-        if (res.success) {
-          setIsAddPartyOpen(false);
-          setPartyForm({ name: '', phone: '', extra: '', address: '', opening_balance: 0 });
-          await loadParties();
-          await loadSummary();
+        // Create Mode
+        if (activeTab === 'customers') {
+          const res = await api.invoices.createCustomer({
+            name: partyForm.name,
+            phone: partyForm.phone,
+            email: partyForm.extra,
+            address: partyForm.address,
+            opening_balance: Number(partyForm.opening_balance) || 0
+          });
+          if (res.success) {
+            setIsAddPartyOpen(false);
+            setPartyForm({ name: '', phone: '', extra: '', address: '', opening_balance: 0 });
+            await loadParties();
+            await loadSummary();
+          }
+        } else {
+          const res = await api.products.createSupplier({
+            name: partyForm.name,
+            phone: partyForm.phone,
+            contact_person: partyForm.extra,
+            address: partyForm.address,
+            opening_balance: Number(partyForm.opening_balance) || 0
+          });
+          if (res.success) {
+            setIsAddPartyOpen(false);
+            setPartyForm({ name: '', phone: '', extra: '', address: '', opening_balance: 0 });
+            await loadParties();
+            await loadSummary();
+          }
         }
       }
     } catch (err) {
@@ -375,10 +471,7 @@ export default function LedgerScreen({ initialTab = 'customers' }) {
                 </span>
                 <button
                   type="button"
-                  onClick={() => {
-                    setPartyForm({ name: '', phone: '', extra: '', address: '', opening_balance: 0 });
-                    setIsAddPartyOpen(true);
-                  }}
+                  onClick={handleOpenAddParty}
                   className="flex items-center space-x-1 px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-[11px] font-semibold transition-colors shadow-xs cursor-pointer"
                 >
                   <Plus className="w-3.5 h-3.5" />
@@ -560,6 +653,26 @@ export default function LedgerScreen({ initialTab = 'customers' }) {
                           ? (isUrdu ? 'رقم وصول کریں (Receive)' : 'Receive Payment')
                           : (isUrdu ? 'ادائیگی کریں (Pay)' : 'Pay Supplier')}
                       </span>
+                    </button>
+
+                    {/* Edit Party Button */}
+                    <button
+                      onClick={() => handleOpenEditParty(selectedParty)}
+                      title={isUrdu ? `${activeTab === 'customers' ? 'گاہک' : 'سپلائر'} کی تفصیلات میں ترمیم کریں` : 'Edit Party Details'}
+                      className="flex items-center space-x-1 px-2.5 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                    >
+                      <Edit className="w-3.5 h-3.5" />
+                      <span>{isUrdu ? 'ترمیم' : 'Edit'}</span>
+                    </button>
+
+                    {/* Delete Party Button */}
+                    <button
+                      onClick={handleDeleteParty}
+                      title={isUrdu ? `${activeTab === 'customers' ? 'گاہک' : 'سپلائر'} حذف کریں` : 'Delete Party'}
+                      className="flex items-center space-x-1 px-2.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>{isUrdu ? 'حذف' : 'Delete'}</span>
                     </button>
 
                     {/* Dedicated Large Statement Window Modal */}
@@ -1366,13 +1479,20 @@ export default function LedgerScreen({ initialTab = 'customers' }) {
           ========================================================================= */}
       <Modal
         isOpen={isAddPartyOpen}
-        onClose={() => setIsAddPartyOpen(false)}
+        onClose={() => {
+          setIsAddPartyOpen(false);
+          setEditingParty(null);
+        }}
         title={
-          isUrdu
-            ? activeTab === 'customers'
-              ? 'نیا گاہک (کھاتہ دار) رجسٹر کریں'
-              : 'نیا سپلائر / ڈسٹری بیوٹر رجسٹر کریں'
-            : `Register New ${activeTab === 'customers' ? 'Customer (Khata)' : 'Supplier (Vendor / Distributor)'}`
+          editingParty
+            ? (isUrdu
+                ? `${activeTab === 'customers' ? 'گاہک' : 'سپلائر'} کی تفصیلات میں ترمیم: ${editingParty.name}`
+                : `Edit ${activeTab === 'customers' ? 'Customer' : 'Supplier'}: ${editingParty.name}`)
+            : (isUrdu
+                ? activeTab === 'customers'
+                  ? 'نیا گاہک (کھاتہ دار) رجسٹر کریں'
+                  : 'نیا سپلائر / ڈسٹری بیوٹر رجسٹر کریں'
+                : `Register New ${activeTab === 'customers' ? 'Customer (Khata)' : 'Supplier (Vendor / Distributor)'}`)
         }
         maxWidth="max-w-2xl"
       >
@@ -1448,19 +1568,21 @@ export default function LedgerScreen({ initialTab = 'customers' }) {
               />
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-amber-600 mb-1">
-                {isUrdu ? 'پچھلا بقایا کھاتہ / پرانا ادھار (روپے)' : 'Opening Balance / Previous Udhar (Rs.)'}
-              </label>
-              <input
-                type="number"
-                min="0"
-                value={partyForm.opening_balance}
-                onChange={(e) => setPartyForm({ ...partyForm, opening_balance: e.target.value })}
-                placeholder="0"
-                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 font-mono focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 focus:outline-hidden"
-              />
-            </div>
+            {!editingParty && (
+              <div>
+                <label className="block text-xs font-semibold text-amber-600 mb-1">
+                  {isUrdu ? 'پچھلا بقایا کھاتہ / پرانا ادھار (روپے)' : 'Opening Balance / Previous Udhar (Rs.)'}
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  value={partyForm.opening_balance}
+                  onChange={(e) => setPartyForm({ ...partyForm, opening_balance: e.target.value })}
+                  placeholder="0"
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 font-mono focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 focus:outline-hidden"
+                />
+              </div>
+            )}
           </div>
 
           <div>
@@ -1480,16 +1602,21 @@ export default function LedgerScreen({ initialTab = 'customers' }) {
             />
           </div>
 
-          <div className="bg-blue-50 p-3 rounded-lg border border-blue-200 text-[11px] text-blue-900">
-            {isUrdu
-              ? '💡 نوٹ: اگر اس پارٹی کا پہلے سے کوئی پرانا بقایا یا ادھار رقم باقی ہے تو یہاں لکھیں۔ سافٹ ویئر خودکار طریقے سے اس کا ابتدائی کھاتہ بنا دے گا۔'
-              : '💡 Note: If this party has an existing balance from before, enter it here. The system will automatically create the opening ledger entry.'}
-          </div>
+          {!editingParty && (
+            <div className="bg-blue-50 p-3 rounded-lg border border-blue-200 text-[11px] text-blue-900">
+              {isUrdu
+                ? '💡 نوٹ: اگر اس پارٹی کا پہلے سے کوئی پرانا بقایا یا ادھار رقم باقی ہے تو یہاں لکھیں۔ سافٹ ویئر خودکار طریقے سے اس کا ابتدائی کھاتہ بنا دے گا۔'
+                : '💡 Note: If this party has an existing balance from before, enter it here. The system will automatically create the opening ledger entry.'}
+            </div>
+          )}
 
           <div className="flex items-center space-x-2 pt-2">
             <button
               type="button"
-              onClick={() => setIsAddPartyOpen(false)}
+              onClick={() => {
+                setIsAddPartyOpen(false);
+                setEditingParty(null);
+              }}
               className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-lg text-xs font-semibold"
             >
               {isUrdu ? 'منسوخ' : 'Cancel'}
@@ -1500,7 +1627,9 @@ export default function LedgerScreen({ initialTab = 'customers' }) {
               className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-md shadow-emerald-600/20"
             >
               {partySubmitting
-                ? isUrdu ? 'محفوظ ہو رہا ہے...' : 'Saving...'
+                ? (isUrdu ? 'محفوظ ہو رہا ہے...' : 'Saving...')
+                : editingParty
+                ? (isUrdu ? '✓ تبدیلیاں محفوظ کریں' : '✓ Save Changes')
                 : isUrdu
                 ? activeTab === 'customers'
                   ? '✓ گاہک محفوظ کریں'

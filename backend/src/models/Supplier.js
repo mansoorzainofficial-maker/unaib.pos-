@@ -58,16 +58,31 @@ class Supplier {
   }
 
   static async delete(id) {
-    // Check if supplier has any GRNs
+    // 1. Check if supplier has any GRNs
     const grnCheck = await get('SELECT COUNT(*) as count FROM grn WHERE supplier_id = ?', [id]);
     if (grnCheck && Number(grnCheck.count) > 0) {
-      throw new Error(`Supplier cannot be deleted because they have ${grnCheck.count} associated GRN record(s).`);
+      throw new Error(`سپلائر ڈیلیٹ نہیں کیا جا سکتا کیونکہ اس کے نام پر ${grnCheck.count} عدد GRN ریکارڈ موجود ہیں۔`);
     }
 
-    // Check if supplier has any purchases
+    // 2. Check if supplier has any purchases
     const purchaseCheck = await get('SELECT COUNT(*) as count FROM purchases WHERE supplier_id = ?', [id]);
     if (purchaseCheck && Number(purchaseCheck.count) > 0) {
-      throw new Error(`Supplier cannot be deleted because they have ${purchaseCheck.count} associated purchase invoice(s).`);
+      throw new Error(`سپلائر ڈیلیٹ نہیں کیا جا سکتا کیونکہ اس کے نام پر ${purchaseCheck.count} عدد خریداری کے بل موجود ہیں۔`);
+    }
+
+    // 3. Check if supplier has any ledger entries (payments or opening balance)
+    const ledgerCheck = await get("SELECT COUNT(*) as count FROM ledger_entries WHERE party_type = 'supplier' AND party_id = ?", [id]);
+    if (ledgerCheck && Number(ledgerCheck.count) > 0) {
+      throw new Error(`سپلائر ڈیلیٹ نہیں کیا جا سکتا کیونکہ کھاتے میں ${ledgerCheck.count} عدد لیجر یا ادائیگی کی انٹریز موجود ہیں۔`);
+    }
+
+    // 4. Check if supplier has non-zero due balance
+    const sup = await this.getById(id);
+    if (sup) {
+      const bal = Number(sup.total_due || sup.current_balance || 0);
+      if (Math.abs(bal) > 0.01) {
+        throw new Error(`سپلائر کا واجب الادا بقایا Rs. ${bal.toLocaleString()} موجود ہے۔ ڈیلیٹ کرنے سے پہلے کھاتہ صفر (0) کریں۔`);
+      }
     }
 
     const res = await run('DELETE FROM suppliers WHERE id = ?', [id]);

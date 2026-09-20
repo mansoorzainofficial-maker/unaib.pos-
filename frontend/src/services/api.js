@@ -227,6 +227,34 @@ export const api = {
       } catch (_) {}
       return { success: true, customerId: newCust.id, customer: newCust };
     },
+    updateCustomer: async (id, data) => {
+      let res = null;
+      try {
+        res = await request(`/invoices/meta/customers/${id}`, {
+          method: 'PUT',
+          body: JSON.stringify(data)
+        });
+      } catch (err) {
+        console.warn('API customer update error:', err);
+        throw err;
+      }
+      try {
+        const list = JSON.parse(localStorage.getItem('unaib_local_customers') || '[]');
+        const updatedList = list.map(c => c.id === id ? { ...c, ...data } : c);
+        localStorage.setItem('unaib_local_customers', JSON.stringify(updatedList));
+      } catch (_) {}
+      return res || { success: true };
+    },
+    deleteCustomer: async (id) => {
+      const res = await request(`/invoices/meta/customers/${id}`, {
+        method: 'DELETE'
+      });
+      try {
+        const list = JSON.parse(localStorage.getItem('unaib_local_customers') || '[]');
+        localStorage.setItem('unaib_local_customers', JSON.stringify(list.filter(c => c.id !== id)));
+      } catch (_) {}
+      return res || { success: true };
+    },
     void: (id, data = {}) => request(`/invoices/${id}/void`, { method: 'POST', body: JSON.stringify(data) }),
     delete: (id) => request(`/invoices/${id}`, { method: 'DELETE' })
   },

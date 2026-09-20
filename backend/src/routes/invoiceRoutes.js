@@ -17,9 +17,11 @@ router.post('/', authFlexible, invCtrl.createInvoice);
 // List and search invoices
 router.get('/', authFlexible, invCtrl.getInvoices);
 
-// List and create customers with balances
+// List, create, update and delete customers with balances
 router.get('/meta/customers', authFlexible, invCtrl.getCustomers);
 router.post('/meta/customers', authRequired, invCtrl.createCustomer);
+router.put('/meta/customers/:id', authFlexible, invCtrl.updateCustomer);
+router.delete('/meta/customers/:id', authRequired, invCtrl.deleteCustomer);
 
 // Void / Cancel an invoice (restores stock, frees serials, adjusts khata)
 router.post('/:id/void', authRequired, invCtrl.voidInvoice);
