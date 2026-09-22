@@ -214,6 +214,139 @@ class Ledger {
     }
     return stmt;
   }
+
+  /**
+   * Safely void / delete a payment voucher with atomic accounting & drawer reversal
+   */
+  static async deletePaymentWithTransaction({ entryId, userId = null, reason = 'User cancelled payment' }) {
+    if (!entryId) {
+      throw new Error('Payment entry ID is required');
+    }
+
+    let partyId = null;
+    let partyType = null;
+    let referenceNo = null;
+    let reversedAmount = 0;
+    let accountId = null;
+
+    await transaction(async ({ query: txQuery, get: txGet, run: txRun }) => {
+      // 1. Fetch entry and verify it is a payment
+      const entry = await txGet('SELECT * FROM ledger_entries WHERE id = ?', [entryId]);
+      if (!entry) {
+        throw new Error(`Ledger entry #${entryId} not found`);
+      }
+
+      const validPaymentTypes = ['payment', 'payment_received', 'payment_made'];
+      if (!validPaymentTypes.includes(entry.entry_type)) {
+        throw new Error(`Only direct payment vouchers can be deleted from here. Entry #${entryId} is a "${entry.entry_type}". For sales/invoices, please use Invoice Void. For GRN, please use GRN Void.`);
+      }
+
+      partyId = entry.party_id;
+      partyType = entry.party_type;
+      referenceNo = entry.reference_no;
+      accountId = entry.account_id;
+
+      const isClient = (partyType === 'client' || partyType === 'customer');
+      const normPartyType = isClient ? 'client' : 'supplier';
+
+      // Determine the paid amount
+      reversedAmount = Number(entry.credit || entry.debit || 0);
+
+      // 2. Reverse account balance if account_id is present
+      if (accountId && reversedAmount > 0) {
+        const account = await txGet('SELECT id, name, current_balance FROM accounts WHERE id = ?', [accountId]);
+        if (account) {
+          // If customer payment was received: cash had increased (+amount), so reverse = -amount
+          // If supplier payment was made: cash had decreased (-amount), so reverse = +amount
+          const accountReversalChange = isClient ? -reversedAmount : reversedAmount;
+
+          await txRun(`
+            UPDATE accounts
+            SET current_balance = current_balance + ?
+            WHERE id = ?
+          `, [accountReversalChange, accountId]);
+
+          const newAccBal = Number(account.current_balance) + accountReversalChange;
+
+          await txRun(`
+            INSERT INTO accounts_ledger (
+              account_id, entry_type, reference_no, debit, credit, balance_after, description
+            ) VALUES (
+              ?, 'payment_reversal', ?, ?, ?, ?, ?
+            )
+          `, [
+            accountId,
+            referenceNo || `REV-${entryId}`,
+            isClient ? 0.0 : reversedAmount,
+            isClient ? reversedAmount : 0.0,
+            newAccBal,
+            `Reversal of ${isClient ? 'payment received from customer' : 'payment made to supplier'} (${referenceNo || entryId})`
+          ]);
+        }
+      }
+
+      // 3. Delete the ledger entry
+      await txRun('DELETE FROM ledger_entries WHERE id = ?', [entryId]);
+
+      // 4. Recalculate party cached balance
+      const altPartyType = isClient ? 'customer' : 'supplier';
+      const balRow = await txGet(`
+        SELECT (COALESCE(SUM(debit), 0.0) - COALESCE(SUM(credit), 0.0)) as bal 
+        FROM ledger_entries 
+        WHERE party_type IN (?, ?) AND party_id = ?
+      `, [normPartyType, altPartyType, partyId]);
+
+      const newBal = balRow ? balRow.bal : 0.0;
+      if (normPartyType === 'supplier') {
+        await txRun('UPDATE suppliers SET total_due = ?, current_balance = ? WHERE id = ?', [newBal, newBal, partyId]);
+      } else {
+        await txRun('UPDATE customers SET current_balance = ? WHERE id = ?', [newBal, partyId]);
+      }
+
+      // 5. Audit log
+      try {
+        await txRun(`
+          INSERT INTO activity_log (user_id, action, entity_type, entity_id, details)
+          VALUES (?, 'payment_deleted', 'ledger_entry', ?, ?)
+        `, [
+          userId || null,
+          entryId,
+          JSON.stringify({
+            reference_no: referenceNo,
+            party_type: normPartyType,
+            party_id: partyId,
+            reversed_amount: reversedAmount,
+            account_id: accountId,
+            reason
+          })
+        ]);
+      } catch (_) {}
+    });
+
+    // Enqueue cloud syncs
+    try {
+      const syncService = require('../services/syncService');
+      syncService.enqueueSync('ledger_entries', entryId, 'delete');
+      if (partyId) {
+        const targetTable = (partyType === 'supplier') ? 'suppliers' : 'customers';
+        syncService.enqueueSync(targetTable, partyId, 'update');
+      }
+      if (accountId) {
+        syncService.enqueueSync('accounts', accountId, 'update');
+      }
+    } catch (_) {}
+
+    // Return updated statement
+    const isClient = (partyType === 'client' || partyType === 'customer');
+    const normPartyType = isClient ? 'client' : 'supplier';
+    const stmt = await this.getPartyStatement(normPartyType, partyId);
+    return {
+      deleted_entry_id: entryId,
+      reference_no: referenceNo,
+      reversed_amount: reversedAmount,
+      statement: stmt
+    };
+  }
 }
 
 module.exports = Ledger;

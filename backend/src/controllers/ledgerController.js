@@ -223,11 +223,50 @@ async function getSupplierStatement(req, res) {
   }
 }
 
+/**
+ * Safely delete / void a payment voucher with atomic reversal
+ * DELETE /api/ledger/payment/:id
+ * POST /api/ledger/payment/:id/void
+ */
+async function deletePayment(req, res) {
+  try {
+    const entryId = Number(req.params.id || req.body?.entry_id);
+    if (!entryId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Valid payment entry ID is required'
+      });
+    }
+
+    const userId = req.user?.id || null;
+    const reason = req.body?.reason || 'User requested payment deletion';
+
+    const result = await Ledger.deletePaymentWithTransaction({
+      entryId,
+      userId,
+      reason
+    });
+
+    res.json({
+      success: true,
+      message: `Payment voucher #${result.reference_no || entryId} (Rs. ${result.reversed_amount.toLocaleString()}) has been successfully voided and reversed.`,
+      result
+    });
+  } catch (err) {
+    console.error('Error deleting payment voucher:', err);
+    res.status(400).json({
+      success: false,
+      error: err.message || 'Failed to delete payment voucher'
+    });
+  }
+}
+
 module.exports = {
   getAccounts,
   getParties,
   getStatement,
   recordPayment,
+  deletePayment,
   getSummary,
   getCustomerStatement,
   getSupplierStatement

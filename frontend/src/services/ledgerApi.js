@@ -1,4 +1,4 @@
-﻿const API_BASE = (typeof window !== 'undefined' && window.location.protocol.startsWith('http'))
+const API_BASE = (typeof window !== 'undefined' && window.location.protocol.startsWith('http'))
   ? '/api/ledger'
   : 'http://localhost:5001/api/ledger';
 
@@ -39,6 +39,17 @@ export const ledgerApi = {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Failed to record payment');
+    return data;
+  },
+
+  deletePayment: async (entryId, reason = 'User deleted payment') => {
+    const res = await fetch(`${API_BASE}/payment/${entryId}`, {
+      method: 'DELETE',
+      headers: getHeaders(),
+      body: JSON.stringify({ reason })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || data.message || 'Failed to delete payment');
     return data;
   }
 };

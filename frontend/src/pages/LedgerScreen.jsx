@@ -324,6 +324,34 @@ export default function LedgerScreen({ initialTab = 'customers' }) {
     }
   };
 
+  const handleDeletePayment = async (entry) => {
+    if (!entry) return;
+    const amount = Number(entry.credit || entry.debit || 0);
+    const ref = entry.reference_no || entry.id;
+    const isCustomer = activeTab === 'customers';
+
+    const confirmMsg = isUrdu
+      ? `کیا آپ واقعی پیمنٹ واؤچر #${ref} (رقم: Rs. ${amount.toLocaleString()}) منسوخ اور ڈیلیٹ کرنا چاہتے ہیں؟\n\nاس کارروائی سے:\n• ${isCustomer ? 'گاہک' : 'سپلائر'} کا کھاتہ خودکار ٹھیک ہو جائے گا۔\n• دکان کے کیش/بینک دراز کا بیلنس واپس ریورس ہو جائے گا۔`
+      : `Are you sure you want to void and delete payment voucher #${ref} (Amount: Rs. ${amount.toLocaleString()})?\n\nThis will automatically:\n• Reverse the ${isCustomer ? 'customer' : 'supplier'} ledger balance.\n• Restore the cash drawer / bank account balance.`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      const res = await api.ledger.deletePayment(entry.id);
+      if (res.success) {
+        alert(isUrdu
+          ? `✓ واؤچر #${ref} کامیابی سے منسوخ ہو گیا۔ کھاتہ اور کیش دراز درست کر دیے گئے۔`
+          : `✓ Payment #${ref} voided successfully.`
+        );
+        if (selectedParty) handleOpenPartyStatement(selectedParty);
+        loadParties();
+        loadSummary();
+      }
+    } catch (err) {
+      alert(err.message || (isUrdu ? 'پیمنٹ منسوخ کرنے میں رکاوٹ پیش آئی۔' : 'Failed to void payment'));
+    }
+  };
+
   // Filtered transactions calculation
   const filteredEntries = useMemo(() => {
     if (!statementData?.entries) return [];
@@ -800,12 +828,13 @@ export default function LedgerScreen({ initialTab = 'customers' }) {
                       <th className="py-2.5 px-3 text-right w-32">{isUrdu ? 'نامہ / ڈیبٹ (Dr +)' : 'Debit (Dr +)'}</th>
                       <th className="py-2.5 px-3 text-right w-32">{isUrdu ? 'جمعہ / کریڈٹ (Cr -)' : 'Credit (Cr -)'}</th>
                       <th className="py-2.5 pr-3 text-right w-36">{isUrdu ? 'میزان بقایا (Balance)' : 'Running Balance'}</th>
+                      <th className="py-2.5 px-3 text-center w-24">{isUrdu ? 'کارروائی' : 'Action'}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-mono">
                     {filteredEntries.length === 0 ? (
                       <tr>
-                        <td colSpan="6" className="py-12 text-center text-slate-500 font-sans space-y-1">
+                        <td colSpan="7" className="py-12 text-center text-slate-500 font-sans space-y-1">
                           <p className="font-semibold text-sm text-slate-700">
                             {isUrdu ? 'کوئی ٹرانزیکشن یا اندراج نہیں ملا' : 'No transactions found'}
                           </p>
@@ -847,6 +876,21 @@ export default function LedgerScreen({ initialTab = 'customers' }) {
                           </td>
                           <td className="py-2.5 pr-3 text-right font-black text-slate-900">
                             Rs. {en.balance.toLocaleString()}
+                          </td>
+                          <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                            {['payment', 'payment_received', 'payment_made'].includes(en.entry_type) ? (
+                              <button
+                                type="button"
+                                onClick={() => handleDeletePayment(en)}
+                                title={isUrdu ? "یہ واؤچر منسوخ کریں" : "Void / Delete this payment voucher"}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded text-[10px] font-bold transition-colors cursor-pointer shadow-2xs"
+                              >
+                                <Trash2 className="w-3 h-3 text-rose-600" />
+                                <span>{isUrdu ? 'منسوخ' : 'Void'}</span>
+                              </button>
+                            ) : (
+                              <span className="text-slate-300 text-xs">—</span>
+                            )}
                           </td>
                         </tr>
                       ))
@@ -1025,12 +1069,13 @@ export default function LedgerScreen({ initialTab = 'customers' }) {
                     <th className="py-3 px-4 text-right w-36">{isUrdu ? 'نامہ (Dr +)' : 'Debit (Dr +)'}</th>
                     <th className="py-3 px-4 text-right w-36">{isUrdu ? 'جمعہ (Cr -)' : 'Credit (Cr -)'}</th>
                     <th className="py-3 pr-4 text-right w-40">{isUrdu ? 'میزان بقایا' : 'Running Balance'}</th>
+                    <th className="py-3 px-4 text-center w-28">{isUrdu ? 'کارروائی' : 'Action'}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-mono">
                   {filteredEntries.length === 0 ? (
                     <tr>
-                      <td colSpan="6" className="py-12 text-center text-slate-500 font-sans">
+                      <td colSpan="7" className="py-12 text-center text-slate-500 font-sans">
                         {isUrdu ? 'اس تاریخ کے درمیان کوئی ریکارڈ موجود نہیں ہے۔' : 'No transactions recorded for this selected range.'}
                       </td>
                     </tr>
@@ -1063,6 +1108,21 @@ export default function LedgerScreen({ initialTab = 'customers' }) {
                         </td>
                         <td className="py-3 pr-4 text-right font-black text-slate-900 text-sm">
                           Rs. {en.balance.toLocaleString()}
+                        </td>
+                        <td className="py-3 px-4 text-center whitespace-nowrap">
+                          {['payment', 'payment_received', 'payment_made'].includes(en.entry_type) ? (
+                            <button
+                              type="button"
+                              onClick={() => handleDeletePayment(en)}
+                              title={isUrdu ? "یہ واؤچر منسوخ کریں" : "Void / Delete this payment voucher"}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded text-xs font-bold transition-colors cursor-pointer shadow-2xs"
+                            >
+                              <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                              <span>{isUrdu ? 'منسوخ' : 'Void'}</span>
+                            </button>
+                          ) : (
+                            <span className="text-slate-300 text-xs">—</span>
+                          )}
                         </td>
                       </tr>
                     ))

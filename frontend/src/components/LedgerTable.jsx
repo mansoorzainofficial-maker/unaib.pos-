@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { Search, FileText } from 'lucide-react';
+import { Search, FileText, Trash2 } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 
 export default function LedgerTable({
   entries = [],
   partyType = 'supplier', // 'supplier' or 'client'
-  partyName = ''
+  partyName = '',
+  onDeletePayment
 }) {
   const { t, isUrdu, getEntryTypeBadge, formatAccountName } = useLanguage();
   const [searchTerm, setSearchTerm] = useState('');
@@ -45,7 +46,7 @@ export default function LedgerTable({
         </div>
       </div>
 
-      {/* Simplified, Clean Table Layout: Date | Type | Description & Ref | Account | Debit | Credit | Balance */}
+      {/* Simplified, Clean Table Layout: Date | Type | Description & Ref | Account | Debit | Credit | Balance | Action */}
       <div className="overflow-x-auto">
         <table className={`w-full text-xs ${isUrdu ? 'text-right' : 'text-left'}`}>
           <thead className="sticky top-0 z-10 bg-slate-100 shadow-xs">
@@ -57,12 +58,13 @@ export default function LedgerTable({
               <th className="py-2.5 px-3 whitespace-nowrap">{t('col_debit')}</th>
               <th className="py-2.5 px-3 whitespace-nowrap">{t('col_credit')}</th>
               <th className="py-2.5 px-4 whitespace-nowrap font-black">{t('col_balance')}</th>
+              <th className="py-2.5 px-3 text-center whitespace-nowrap">{isUrdu ? 'کارروائی' : 'Action'}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
             {filteredEntries.length === 0 ? (
               <tr>
-                <td colSpan="7" className="py-12 text-center text-slate-400">
+                <td colSpan="8" className="py-12 text-center text-slate-400">
                   <FileText className="w-10 h-10 mx-auto mb-2 text-slate-300 opacity-60" />
                   <p className="font-semibold text-sm text-slate-600">{t('no_entries_title')}</p>
                   <p className="text-[11px] mt-1 text-slate-400">{t('no_entries_hint')}</p>
@@ -141,6 +143,23 @@ export default function LedgerTable({
                             : (isUrdu ? 'صاف' : 'NIL')}
                         </span>
                       </span>
+                    </td>
+
+                    {/* 8. Action (Void / Delete for payment vouchers) */}
+                    <td className="py-2.5 px-3 text-center whitespace-nowrap">
+                      {['payment', 'payment_received', 'payment_made'].includes(en.entry_type) && onDeletePayment ? (
+                        <button
+                          type="button"
+                          onClick={() => onDeletePayment(en)}
+                          title={isUrdu ? "یہ پیمنٹ واؤچر منسوخ / ڈیلیٹ کریں" : "Void / Delete this payment voucher"}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-800 border border-rose-200 rounded-lg text-[11px] font-bold transition-colors cursor-pointer shadow-2xs"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                          <span>{isUrdu ? 'منسوخ' : 'Void'}</span>
+                        </button>
+                      ) : (
+                        <span className="text-slate-300 text-xs">-</span>
+                      )}
                     </td>
                   </tr>
                 );

@@ -164,6 +164,38 @@ export default function Ledger({ initialTab = 'supplier', initialPartyId = null 
     setTimeout(() => setNotification(''), 4000);
   };
 
+  // Called when user clicks Void / Delete on a payment voucher row
+  const handleDeletePayment = async (entry) => {
+    if (!entry) return;
+
+    const amount = Number(entry.credit || entry.debit || 0);
+    const ref = entry.reference_no || entry.id;
+
+    const confirmMsg = isUrdu
+      ? `کیا آپ واقعی پیمنٹ واؤچر #${ref} (رقم: Rs. ${amount.toLocaleString()}) منسوخ اور ڈیلیٹ کرنا چاہتے ہیں؟\n\nاس کارروائی سے:\n• ${isSupplier ? 'سپلائر' : 'گاہک'} کا کھاتہ خودکار ٹھیک ہو جائے گا۔\n• دکان کے کیش/بینک دراز کا بیلنس واپس ریورس ہو جائے گا۔`
+      : `Are you sure you want to void and delete payment voucher #${ref} (Amount: Rs. ${amount.toLocaleString()})?\n\nThis will automatically:\n• Reverse the ${isSupplier ? 'supplier' : 'customer'} ledger balance.\n• Restore the cash drawer / bank account balance.`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    try {
+      const res = await ledgerApi.deletePayment(entry.id);
+      if (res.success) {
+        setNotification(isUrdu
+          ? `✓ واؤچر #${ref} (Rs. ${amount.toLocaleString()}) کامیابی سے منسوخ ہو گیا۔ کھاتہ اور کیش دراز درست کر دیے گئے۔`
+          : `✓ Payment #${ref} (Rs. ${amount.toLocaleString()}) voided successfully. Ledger and cash drawer updated.`
+        );
+        setTimeout(() => setNotification(''), 6000);
+        // Refresh statement & parties
+        if (selectedPartyId) loadStatement(activeTab, selectedPartyId);
+        loadParties();
+      }
+    } catch (err) {
+      console.error('Failed to delete payment:', err);
+      setErrorNotification(err.message || (isUrdu ? 'پیمنٹ منسوخ کرنے میں رکاوٹ پیش آئی۔' : 'Failed to void payment'));
+      setTimeout(() => setErrorNotification(''), 8000);
+    }
+  };
+
   const selectedParty = parties.find(p => p.id === Number(selectedPartyId)) || statement?.party;
   const isSupplier = activeTab === 'supplier';
 
@@ -449,6 +481,7 @@ export default function Ledger({ initialTab = 'supplier', initialPartyId = null 
               entries={statement?.entries || []}
               partyType={activeTab}
               partyName={selectedParty?.name || ''}
+              onDeletePayment={handleDeletePayment}
             />
           )}
         </div>

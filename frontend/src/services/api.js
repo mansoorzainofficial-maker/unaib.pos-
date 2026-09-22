@@ -304,6 +304,7 @@ export const api = {
     getCustomer: (id) => request(`/ledger/customer/${id}`),
     getSupplier: (id) => request(`/ledger/supplier/${id}`),
     recordPayment: (data) => request('/ledger/payment', { method: 'POST', body: JSON.stringify(data) }),
+    deletePayment: (id, data = {}) => request(`/ledger/payment/${id}`, { method: 'DELETE', body: JSON.stringify(data) }),
     getSummary: () => request('/ledger/summary')
   },
 

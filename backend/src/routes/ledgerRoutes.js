@@ -15,6 +15,8 @@ router.get('/accounts', authFlexible, ledgerController.getAccounts);
 router.get('/parties', authFlexible, ledgerController.getParties);
 router.get('/statement', authFlexible, ledgerController.getStatement);
 router.post('/payment', authFlexible, ledgerController.recordPayment);
+router.delete('/payment/:id', authFlexible, ledgerController.deletePayment);
+router.post('/payment/:id/void', authFlexible, ledgerController.deletePayment);
 
 // Missing endpoints required by frontend & reports
 router.get('/summary', authFlexible, ledgerController.getSummary);
