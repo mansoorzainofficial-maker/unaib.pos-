@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import { useLanguage } from '../context/LanguageContext';
 import CustomerForm from '../components/CustomerForm';
+import BarcodeScannerInput from '../components/BarcodeScannerInput';
+import { getCachedProducts } from '../utils/indexedDB';
 import {
   RotateCcw,
   Search,
@@ -67,14 +69,34 @@ export default function SaleReturnScreen() {
 
   const loadProductsAndCustomers = async () => {
     try {
-      const prodRes = await api.products.getAll();
-      const list = prodRes.products || prodRes.data || [];
+      const [prodRes, custRes] = await Promise.all([
+        api.products.getAll().catch(err => {
+          console.warn('SaleReturn: Products load warning:', err);
+          return { success: false, products: [] };
+        }),
+        api.invoices.getCustomers().catch(err => {
+          console.warn('SaleReturn: Customers load warning:', err);
+          return { success: false, customers: [] };
+        })
+      ]);
+
+      let list = prodRes.products || prodRes.data || (Array.isArray(prodRes) ? prodRes : []);
+      if (list.length === 0) {
+        try {
+          const cached = await getCachedProducts();
+          if (cached && cached.length > 0) list = cached;
+        } catch (_) {}
+      }
       setProductsList(list);
 
-      const custRes = await api.invoices.getCustomers();
-      setCustomersList(custRes.customers || custRes.data || []);
+      const custs = custRes.customers || custRes.data || (Array.isArray(custRes) ? custRes : []);
+      setCustomersList(custs);
     } catch (e) {
       console.error('Failed to load products/customers:', e);
+      try {
+        const cached = await getCachedProducts();
+        if (cached && cached.length > 0) setProductsList(cached);
+      } catch (_) {}
     }
   };
 
@@ -199,11 +221,18 @@ export default function SaleReturnScreen() {
   };
 
   const handleAddManualItem = (productId) => {
-    const prod = productsList.find(p => p.id === Number(productId));
+    const prod = productsList.find(p => String(p.id) === String(productId));
     if (!prod) return;
     
-    // Check if already in list
-    if (returnItems.some(i => i.product_id === prod.id)) {
+    // If already in return items, increment quantity
+    const existingIndex = returnItems.findIndex(i => String(i.product_id) === String(prod.id));
+    if (existingIndex !== -1) {
+      const next = [...returnItems];
+      next[existingIndex] = {
+        ...next[existingIndex],
+        quantity: Number(next[existingIndex].quantity || 0) + 1
+      };
+      setReturnItems(next);
       return;
     }
 
@@ -219,6 +248,33 @@ export default function SaleReturnScreen() {
         serial_numbers: []
       }
     ]);
+  };
+
+  // Barcode scanner handler for Sale Return screen
+  const handleScannerInput = async (barcode) => {
+    const clean = (barcode || '').trim();
+    if (!clean) return;
+
+    setErrorMsg('');
+
+    // 1. Check if it's an invoice barcode (starts with INV or UCA or contains hyphenated format)
+    const isLikelyInvoice = clean.toUpperCase().startsWith('INV') || clean.toUpperCase().startsWith('UCA') || clean.length > 10;
+    if (isLikelyInvoice) {
+      setSearchInvoice(clean);
+      await handleSelectInvoice(clean);
+      return;
+    }
+
+    // 2. Check if it matches a product barcode
+    const matchedProd = productsList.find(p => p.barcode && p.barcode.toLowerCase() === clean.toLowerCase());
+    if (matchedProd) {
+      handleAddManualItem(matchedProd.id);
+      return;
+    }
+
+    // 3. Fallback: try looking up invoice directly by the scanned value
+    setSearchInvoice(clean);
+    await handleSelectInvoice(clean);
   };
 
   const handleUpdateItem = (index, field, value) => {
@@ -386,11 +442,22 @@ export default function SaleReturnScreen() {
             </div>
           )}
 
-          {/* Section 1: Search Existing Invoice by Number or Party */}
-          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
-            <h2 className="text-xs font-black uppercase text-slate-500 tracking-wider mb-3">
-              {isUrdu ? '۱۔ بل نمبر یا گاہک / پارٹی کے نام سے تلاش کریں (اختیاری):' : '1. Search by Invoice No or Party / Customer Name (Optional):'}
+          {/* Section 1: Search Existing Invoice by Barcode / Number or Party */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-3">
+            <h2 className="text-xs font-black uppercase text-slate-500 tracking-wider">
+              {isUrdu ? '۱۔ بارکوڈ اسکین کریں یا بل نمبر / پارٹی نام سے تلاش کریں:' : '1. Scan Barcode or Search by Bill No / Customer Name:'}
             </h2>
+
+            {/* Quick Barcode Scanner Bar */}
+            <div className="p-2.5 bg-amber-50/50 rounded-xl border border-amber-200">
+              <BarcodeScannerInput
+                onScan={handleScannerInput}
+                placeholder={isUrdu ? "بارکوڈ اسکین کریں (رسید بل بارکوڈ یا سامان کا بارکوڈ)..." : "Scan invoice barcode or product barcode to auto-load..."}
+                theme="amber"
+                autoFocus={false}
+              />
+            </div>
+
             <form onSubmit={handleSearchInvoice} className="flex gap-3">
               <div className="relative flex-1">
                 <Search className="w-4 h-4 absolute left-3 top-3 text-slate-400" />

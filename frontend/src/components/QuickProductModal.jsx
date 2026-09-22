@@ -12,6 +12,7 @@ export default function QuickProductModal({
   initialCost = 0,
   initialName = '',
   initialCategoryId = '',
+  initialBarcode = '',
   onSuccess
 }) {
   const { t, isUrdu } = useLanguage();
@@ -20,7 +21,7 @@ export default function QuickProductModal({
   const [categoryId, setCategoryId] = useState(initialCategoryId || '');
   const [costPrice, setCostPrice] = useState(initialCost || '');
   const [salePrice, setSalePrice] = useState('');
-  const [barcode, setBarcode] = useState('');
+  const [barcode, setBarcode] = useState(initialBarcode || '');
   const [hasSerials, setHasSerials] = useState(false);
   const [warrantyMonths, setWarrantyMonths] = useState(12);
 
@@ -31,6 +32,7 @@ export default function QuickProductModal({
     if (isOpen) {
       if (initialName) setName(initialName);
       if (initialCategoryId) setCategoryId(initialCategoryId);
+      if (initialBarcode) setBarcode(initialBarcode);
       if (initialCost) {
         setCostPrice(initialCost);
         const num = Number(initialCost);
@@ -39,7 +41,7 @@ export default function QuickProductModal({
         }
       }
     }
-  }, [isOpen, initialName, initialCategoryId, initialCost]);
+  }, [isOpen, initialName, initialCategoryId, initialCost, initialBarcode]);
 
   if (!isOpen) return null;
 

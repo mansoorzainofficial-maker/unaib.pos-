@@ -375,6 +375,39 @@ export const api = {
     getOverview: () => request('/dashboard')
   },
 
+  // Suppliers
+  suppliers: {
+    getAll: async () => {
+      try {
+        const res = await request('/suppliers');
+        if (res.success && Array.isArray(res.suppliers)) return res.suppliers;
+      } catch (err) {
+        console.warn('API suppliers getAll warning:', err);
+      }
+      const supRes = await api.products.getSuppliers();
+      return supRes.suppliers || [];
+    },
+    getById: (id) => request(`/suppliers/${id}`),
+    create: (data) => request('/suppliers', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id, data) => request(`/suppliers/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    delete: (id) => request(`/suppliers/${id}`, { method: 'DELETE' })
+  },
+
+  // GRN (Goods Received Note)
+  grn: {
+    getAll: async () => {
+      try {
+        const res = await request('/grn');
+        return res.grns || res.data || [];
+      } catch (err) {
+        console.warn('API grn getAll warning:', err);
+        return [];
+      }
+    },
+    getById: (id) => request(`/grn/${id}`),
+    create: (payload) => request('/grn', { method: 'POST', body: JSON.stringify(payload) })
+  },
+
   // Local-First Cloud Sync Queue
   sync: {
     getStatus: () => request('/sync/status'),

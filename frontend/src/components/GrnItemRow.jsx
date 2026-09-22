@@ -16,7 +16,7 @@ export default function GrnItemRow({
   const lineTotal = Math.round((Number(item.quantity_received || 0) * Number(item.unit_cost || 0)) * 100) / 100;
 
   // Find currently selected product if item has a product_id
-  const currentProduct = products.find(p => p.id === Number(item.product_id));
+  const currentProduct = products.find(p => item.product_id && String(p.id) === String(item.product_id));
 
   // Determine selected category: either from item.category_id or inferred from currentProduct
   const selectedCategoryId = (item.category_id !== undefined && item.category_id !== null && item.category_id !== '')
@@ -43,10 +43,10 @@ export default function GrnItemRow({
       if (onOpenAddProduct) onOpenAddProduct(index);
       return;
     }
-    const selected = products.find(p => p.id === Number(productId));
+    const selected = products.find(p => productId && String(p.id) === String(productId));
     onChange(index, {
       ...item,
-      product_id: productId ? Number(productId) : '',
+      product_id: productId ? selected?.id || productId : '',
       custom_product_name: '',
       category_id: selected?.category_id ? Number(selected.category_id) : item.category_id,
       unit_cost: selected ? Number(selected.cost_price || 0) : item.unit_cost

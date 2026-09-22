@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Truck, Plus, CheckCircle2, AlertCircle, Loader2, ArrowRight, Calendar, DollarSign, FileText } from 'lucide-react';
-import { grnApi } from '../services/grnApi';
-import { supplierApi } from '../services/supplierApi';
 import { api } from '../services/api';
 import { useLanguage } from '../context/LanguageContext';
 import GrnItemRow from '../components/GrnItemRow';
 import QuickProductModal from '../components/QuickProductModal';
 import SupplierForm from '../components/SupplierForm';
+import BarcodeScannerInput from '../components/BarcodeScannerInput';
+import { getCachedProducts } from '../utils/indexedDB';
 
 export default function CreateGrn({ onNavigateToList }) {
   const { t, isUrdu } = useLanguage();
@@ -29,6 +29,7 @@ export default function CreateGrn({ onNavigateToList }) {
   const [isAddProductOpen, setIsAddProductOpen] = useState(false);
   const [targetRowIndex, setTargetRowIndex] = useState(null);
   const [isAddSupplierOpen, setIsAddSupplierOpen] = useState(false);
+  const [scannedBarcodeForModal, setScannedBarcodeForModal] = useState('');
 
   useEffect(() => {
     loadMeta();
@@ -36,23 +37,101 @@ export default function CreateGrn({ onNavigateToList }) {
 
   const loadMeta = async () => {
     setLoading(true);
+    setErrorMsg('');
     try {
-      const [supList, prodList, catList] = await Promise.all([
-        supplierApi.getAll(),
-        api.products.getAll(),
+      // Independent safe parallel fetches
+      const [supRes, prodRes, catRes] = await Promise.all([
+        api.suppliers.getAll().catch(err => {
+          console.warn('Failed to load suppliers for GRN:', err);
+          return [];
+        }),
+        api.products.getAll().catch(err => {
+          console.warn('Failed to load products for GRN:', err);
+          return { success: false, products: [] };
+        }),
         api.products.getCategories().catch(() => ({ categories: [] }))
       ]);
-      setSuppliers(supList);
-      setProducts(prodList.products || prodList || []);
-      setCategories(catList.categories || catList || []);
-      if (supList.length > 0 && !supplierId) {
-        setSupplierId(supList[0].id);
+
+      const loadedSuppliers = Array.isArray(supRes) ? supRes : (supRes?.suppliers || []);
+      setSuppliers(loadedSuppliers);
+      if (loadedSuppliers.length > 0 && !supplierId) {
+        setSupplierId(loadedSuppliers[0].id);
       }
+
+      let loadedProducts = prodRes?.products || (Array.isArray(prodRes) ? prodRes : []);
+      // If products list from server is empty, try loading from IndexedDB offline cache
+      if (loadedProducts.length === 0) {
+        try {
+          const cached = await getCachedProducts();
+          if (cached && cached.length > 0) {
+            loadedProducts = cached;
+            console.log(`[GRN] Loaded ${cached.length} products from offline IndexedDB cache.`);
+          }
+        } catch (_) {}
+      }
+      setProducts(loadedProducts);
+
+      const loadedCategories = catRes?.categories || (Array.isArray(catRes) ? catRes : []);
+      setCategories(loadedCategories);
     } catch (err) {
       console.error('Failed to load metadata for GRN:', err);
+      try {
+        const cached = await getCachedProducts();
+        if (cached && cached.length > 0) setProducts(cached);
+      } catch (_) {}
       setErrorMsg(t('grn_err_meta'));
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Barcode scanner handler for GRN inward receiving
+  const handleBarcodeScan = (barcode) => {
+    const clean = (barcode || '').trim();
+    if (!clean) return;
+
+    // 1. Find product in loaded products list
+    const match = products.find(p => p.barcode && p.barcode.toLowerCase() === clean.toLowerCase());
+    if (match) {
+      setItems(prev => {
+        const existingIdx = prev.findIndex(it => String(it.product_id) === String(match.id));
+        if (existingIdx !== -1) {
+          const next = [...prev];
+          next[existingIdx] = {
+            ...next[existingIdx],
+            quantity_received: Number(next[existingIdx].quantity_received || 0) + 1,
+            quantity_ordered: Number(next[existingIdx].quantity_ordered || 0) + 1
+          };
+          return next;
+        }
+
+        const emptyIdx = prev.findIndex(it => !it.product_id && !it.custom_product_name);
+        const newItem = {
+          product_id: match.id,
+          category_id: match.category_id || '',
+          custom_product_name: '',
+          quantity_ordered: 1,
+          quantity_received: 1,
+          unit_cost: Number(match.cost_price || 0)
+        };
+        if (emptyIdx !== -1) {
+          const next = [...prev];
+          next[emptyIdx] = newItem;
+          return next;
+        }
+        return [...prev, newItem];
+      });
+
+      setSuccessMsg(isUrdu
+        ? `✓ سامان "${match.name}" GRN لسٹ میں شامل ہو گیا!`
+        : `✓ "${match.name}" added to GRN!`
+      );
+      setTimeout(() => setSuccessMsg(''), 4000);
+    } else {
+      // 2. Unregistered barcode: open Quick Add Modal with this barcode pre-filled
+      setScannedBarcodeForModal(clean);
+      setTargetRowIndex(null);
+      setIsAddProductOpen(true);
     }
   };
 
@@ -424,6 +503,18 @@ export default function CreateGrn({ onNavigateToList }) {
             </div>
           </div>
 
+          {/* Barcode Scanner Inward Bar */}
+          <div className="p-3 bg-amber-50/40 border-b border-slate-200">
+            <div className="max-w-xl">
+              <BarcodeScannerInput
+                onScan={handleBarcodeScan}
+                placeholder={isUrdu ? "بارکوڈ اسکین کریں یا لکھ کر Enter دبائیں (فوری GRN میں شامل ہوگا)..." : "Scan barcode or enter code to auto-add item to GRN..."}
+                theme="amber"
+                autoFocus={false}
+              />
+            </div>
+          </div>
+
           <div className="overflow-x-auto">
             <table className="w-full text-right text-xs">
               <thead>
@@ -494,14 +585,21 @@ export default function CreateGrn({ onNavigateToList }) {
       {/* Quick Add Product Modal */}
       <QuickProductModal
         isOpen={isAddProductOpen}
-        onClose={() => setIsAddProductOpen(false)}
+        onClose={() => {
+          setIsAddProductOpen(false);
+          setScannedBarcodeForModal('');
+        }}
         categories={categories}
         supplierId={supplierId}
         paymentType={paymentType}
+        initialBarcode={scannedBarcodeForModal}
         initialName={targetRowIndex !== null ? items[targetRowIndex]?.custom_product_name : ''}
         initialCategoryId={targetRowIndex !== null ? items[targetRowIndex]?.category_id : ''}
         initialCost={targetRowIndex !== null ? items[targetRowIndex]?.unit_cost : 0}
-        onSuccess={handleProductCreated}
+        onSuccess={(newProd, sup, qty) => {
+          setScannedBarcodeForModal('');
+          handleProductCreated(newProd, sup, qty);
+        }}
       />
 
       {/* Quick Add Supplier Modal */}
