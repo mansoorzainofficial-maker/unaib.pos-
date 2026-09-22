@@ -38,6 +38,15 @@ app.use(cors({
 }));
 app.use(express.json());
 
+// Strict Privacy & Anti-Leak: Disable caching on all API responses
+// Prevents Chromium disk cache, browser memory, or proxies from retaining sensitive ledger, customer, or sales records
+app.use('/api', (req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+});
+
 // Database initialization promise
 let initDbPromise = null;
 let isDbReady = false;
