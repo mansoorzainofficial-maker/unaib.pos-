@@ -472,7 +472,7 @@ export default function CreateGrn({ onNavigateToList }) {
         </div>
 
         {/* Dynamic Items Table Card */}
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs">
           <div className="p-3 border-b border-slate-200 bg-slate-50/70 flex flex-wrap items-center justify-between gap-2">
             <span className="font-bold text-xs text-slate-800 flex items-center gap-1.5">
               <span>{t('grn_items_breakdown')}</span>
@@ -495,7 +495,7 @@ export default function CreateGrn({ onNavigateToList }) {
               <button
                 type="button"
                 onClick={handleAddItemRow}
-                className="flex items-center space-x-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-xl text-xs shadow-xs transition-colors cursor-pointer"
+                className="flex items-center space-x-1.5 px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-xl text-xs shadow-xs transition-colors cursor-pointer"
               >
                 <Plus className="w-3.5 h-3.5" />
                 <span>{isUrdu ? '+ نئی قطار شامل کریں' : '+ Add Row to GRN'}</span>
@@ -515,7 +515,7 @@ export default function CreateGrn({ onNavigateToList }) {
             </div>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto min-h-[360px] pb-36">
             <table className="w-full text-right text-xs">
               <thead>
                 <tr className="bg-slate-100/80 text-slate-600 font-bold border-b border-slate-200">
