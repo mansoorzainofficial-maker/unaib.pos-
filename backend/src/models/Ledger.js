@@ -126,6 +126,8 @@ class Ledger {
     const normPartyType = isClient ? 'client' : 'supplier';
     const tableName = isClient ? 'customers' : 'suppliers';
 
+    let newEntryId = null;
+
     await transaction(async ({ query: txQuery, get: txGet, run: txRun }) => {
       // Verify Account exists
       const account = await txGet('SELECT id, name, type, current_balance FROM accounts WHERE id = ?', [account_id]);
@@ -155,6 +157,8 @@ class Ledger {
           0.0, ?, ?, ?, ?
         )
       `, [normPartyType, party_id, voucherNo, numericAmount, account_id, desc, entry_date]);
+
+      newEntryId = res.lastInsertRowid;
 
       // Deduct or add account balance in accounts table
       const balanceChange = isClient ? numericAmount : -numericAmount;
@@ -201,8 +205,14 @@ class Ledger {
       }
     });
 
-    // Return refreshed statement AFTER commit
-    return await this.getPartyStatement(normPartyType, party_id);
+    // Return refreshed statement AFTER commit with newEntryId attached
+    const stmt = await this.getPartyStatement(normPartyType, party_id);
+    if (stmt) {
+      stmt.new_entry_id = newEntryId;
+      stmt.party_id = party_id;
+      stmt.party_type = normPartyType;
+    }
+    return stmt;
   }
 }
 

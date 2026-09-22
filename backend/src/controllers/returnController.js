@@ -1,4 +1,5 @@
 const { query, get, run, transaction } = require('../config/db');
+const syncService = require('../services/syncService');
 
 async function generateSaleReturnNumber(dbGet = get) {
   const now = new Date();
@@ -216,6 +217,11 @@ async function createSaleReturn(req, res) {
       return { returnId, returnNumber, totalRefund };
     });
 
+    syncService.enqueueSync('sales_returns', result.returnId, 'insert');
+    if (customer_id) {
+      syncService.enqueueSync('customers', customer_id, 'update');
+    }
+
     res.status(201).json({
       success: true,
       message: 'Sale return processed successfully',
@@ -365,6 +371,10 @@ async function createPurchaseReturn(req, res) {
 
       return { returnId, returnNumber, totalAmount };
     });
+
+    if (supplier_id) {
+      syncService.enqueueSync('suppliers', supplier_id, 'update');
+    }
 
     res.status(201).json({
       success: true,

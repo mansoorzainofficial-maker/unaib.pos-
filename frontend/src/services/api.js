@@ -373,5 +373,11 @@ export const api = {
   // Dashboard Landing
   dashboard: {
     getOverview: () => request('/dashboard')
+  },
+
+  // Local-First Cloud Sync Queue
+  sync: {
+    getStatus: () => request('/sync/status'),
+    trigger: () => request('/sync/trigger', { method: 'POST' })
   }
 };

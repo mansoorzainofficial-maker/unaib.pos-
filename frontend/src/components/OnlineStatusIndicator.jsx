@@ -1,77 +1,31 @@
 import React, { useState, useEffect } from 'react';
-import { Wifi, WifiOff, RefreshCw, AlertTriangle, CheckCircle2, X } from 'lucide-react';
-import { syncManager } from '../utils/syncManager';
-import { getPendingBillsCount } from '../utils/indexedDB';
+import { Wifi, WifiOff, RefreshCw, AlertTriangle, CheckCircle2, X, Cloud, CloudOff } from 'lucide-react';
 import { api } from '../services/api';
 import { useLanguage } from '../context/LanguageContext';
 
 export default function OnlineStatusIndicator() {
   const { t, isUrdu } = useLanguage();
-  const [isOnline, setIsOnline] = useState(syncManager.isOnline());
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [pendingCount, setPendingCount] = useState(0);
+  const [syncStatus, setSyncStatus] = useState({
+    isOnline: true,
+    isSyncing: false,
+    pendingCount: 0,
+    failedCount: 0,
+    lastSyncTime: null,
+    cloudConfigured: false
+  });
   const [oversoldAlerts, setOversoldAlerts] = useState([]);
   const [isAlertsModalOpen, setIsAlertsModalOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState(null);
   const [resolvingId, setResolvingId] = useState(null);
+  const [manualSyncing, setManualSyncing] = useState(false);
 
-  useEffect(() => {
-    // Initial counts
-    updatePendingCount();
-    loadOversoldAlerts();
-
-    // Subscribe to SyncManager events
-    const unsubscribe = syncManager.subscribe((event) => {
-      if (event.type === 'STATUS_CHANGE' || event.type === 'INIT') {
-        setIsOnline(event.online);
-      } else if (event.type === 'SYNC_START') {
-        setIsSyncing(true);
-      } else if (event.type === 'SYNC_COMPLETE') {
-        setIsSyncing(false);
-        updatePendingCount();
-        loadOversoldAlerts();
-
-        const { synced, failed, warnings } = event.results || {};
-        if (synced > 0) {
-          setToastMessage({
-            type: 'success',
-            text: isUrdu
-              ? `✓ ${synced} آف لائن بل کامیابی سے سرور پر سنک ہو گئے!`
-              : `✓ ${synced} offline bill(s) successfully synced!`
-          });
-          setTimeout(() => setToastMessage(null), 5000);
-        }
-
-        if (warnings && warnings.length > 0) {
-          setToastMessage({
-            type: 'warning',
-            text: isUrdu
-              ? `⚠️ انتباہ: ${warnings.length} آئٹم اسٹاک سے زیادہ فروخت ہوئے، دستی طور پر چیک کریں۔`
-              : `⚠️ Warning: ${warnings.length} item(s) oversold while offline, please check stock.`
-          });
-          setTimeout(() => setToastMessage(null), 8000);
-        }
-      } else if (event.type === 'SYNC_ERROR') {
-        setIsSyncing(false);
-        updatePendingCount();
+  const fetchStatus = async () => {
+    try {
+      const res = await api.sync.getStatus();
+      if (res && res.success) {
+        setSyncStatus(res);
       }
-    });
-
-    // Periodic check for pending bills & unresolved stock alerts
-    const interval = setInterval(() => {
-      updatePendingCount();
-      loadOversoldAlerts();
-    }, 15000);
-
-    return () => {
-      unsubscribe();
-      clearInterval(interval);
-    };
-  }, [isUrdu]);
-
-  const updatePendingCount = async () => {
-    const count = await getPendingBillsCount();
-    setPendingCount(count);
+    } catch (_) {}
   };
 
   const loadOversoldAlerts = async () => {
@@ -80,14 +34,46 @@ export default function OnlineStatusIndicator() {
       if (res && res.success) {
         setOversoldAlerts(res.alerts || []);
       }
-    } catch (err) {
-      // Ignore if offline
-    }
+    } catch (_) {}
   };
 
+  useEffect(() => {
+    fetchStatus();
+    loadOversoldAlerts();
+
+    // Poll status every 10 seconds for real-time background sync monitoring
+    const interval = setInterval(() => {
+      fetchStatus();
+      loadOversoldAlerts();
+    }, 10000);
+
+    return () => clearInterval(interval);
+  }, []);
+
   const handleManualSync = async () => {
-    if (!isOnline || isSyncing) return;
-    await syncManager.syncPendingBills();
+    if (manualSyncing || syncStatus.isSyncing) return;
+    setManualSyncing(true);
+    try {
+      const res = await api.sync.trigger();
+      if (res && res.success) {
+        const synced = res.result?.syncedCount || 0;
+        setToastMessage({
+          type: 'success',
+          text: isUrdu
+            ? `✓ کلاؤڈ سنک مکمل (${synced} ریکارڈز اپڈیٹ ہو گئے)`
+            : `✓ Cloud sync complete (${synced} records updated)`
+        });
+      }
+    } catch (err) {
+      setToastMessage({
+        type: 'warning',
+        text: isUrdu ? 'کلاؤڈ سے رابطہ نہیں ہو سکا' : 'Cloud sync failed to reach server'
+      });
+    } finally {
+      setManualSyncing(false);
+      fetchStatus();
+      setTimeout(() => setToastMessage(null), 4000);
+    }
   };
 
   const handleResolveAlert = async (alertId) => {
@@ -104,9 +90,11 @@ export default function OnlineStatusIndicator() {
     }
   };
 
+  const isCurrentlySyncing = syncStatus.isSyncing || manualSyncing;
+
   return (
     <div className="flex items-center space-x-2 relative text-xs">
-      {/* Toast Notification Banner (Floating) */}
+      {/* Toast Notification Banner */}
       {toastMessage && (
         <div className={`fixed top-4 right-4 z-50 px-4 py-2.5 rounded-xl shadow-xl border flex items-center gap-2 animate-in fade-in slide-in-from-top-2 text-xs font-bold ${
           toastMessage.type === 'success'
@@ -128,41 +116,65 @@ export default function OnlineStatusIndicator() {
         </div>
       )}
 
-      {/* Online / Offline Status Pill */}
-      <div
-        className={`flex items-center space-x-1.5 px-3 py-1 rounded-full font-bold transition-colors ${
-          isOnline
-            ? 'bg-emerald-50 border border-emerald-300 text-emerald-700'
-            : 'bg-rose-50 border border-rose-300 text-rose-700 animate-pulse'
-        }`}
-        title={isOnline ? 'Internet connection active' : 'No internet connection, POS operating in offline mode'}
-      >
-        <span className={`w-2 h-2 rounded-full ${isOnline ? 'bg-emerald-500' : 'bg-rose-500'}`} />
-        {isOnline ? (
-          <Wifi className="w-3.5 h-3.5 text-emerald-600" />
-        ) : (
-          <WifiOff className="w-3.5 h-3.5 text-rose-600" />
-        )}
-        <span>{isOnline ? (isUrdu ? 'آن لائن' : 'Online') : (isUrdu ? 'آف لائن' : 'Offline')}</span>
-      </div>
-
-      {/* Pending Offline Bills Badge & Sync Button */}
-      {pendingCount > 0 && (
+      {/* Sync Status Badge */}
+      {isCurrentlySyncing ? (
+        // 1. Blue spinning: Syncing...
+        <div className="flex items-center space-x-1.5 px-3 py-1 rounded-full font-bold bg-blue-50 border border-blue-300 text-blue-700 shadow-xs animate-pulse">
+          <RefreshCw className="w-3.5 h-3.5 text-blue-600 animate-spin" />
+          <span>{isUrdu ? 'سنک ہو رہا ہے...' : 'Syncing...'}</span>
+        </div>
+      ) : syncStatus.pendingCount > 0 ? (
+        // 2. Yellow/Amber: Pending Sync with Manual Trigger Button
         <div className="flex items-center space-x-1">
-          <span className="px-2 py-0.5 rounded-full bg-amber-100 border border-amber-300 text-amber-900 font-mono font-bold text-[11px]">
-            {pendingCount} {isUrdu ? 'آف لائن بل' : 'pending'}
-          </span>
+          <div
+            className={`flex items-center space-x-1.5 px-3 py-1 rounded-full font-bold ${
+              syncStatus.isOnline
+                ? 'bg-amber-50 border border-amber-300 text-amber-800'
+                : 'bg-rose-50 border border-rose-300 text-rose-700 animate-pulse'
+            }`}
+            title={syncStatus.isOnline ? `${syncStatus.pendingCount} records queued for cloud sync` : 'Offline - changes saved locally in SQLite'}
+          >
+            {syncStatus.isOnline ? (
+              <Cloud className="w-3.5 h-3.5 text-amber-600" />
+            ) : (
+              <WifiOff className="w-3.5 h-3.5 text-rose-600" />
+            )}
+            <span>
+              {syncStatus.isOnline
+                ? `${syncStatus.pendingCount} ${isUrdu ? 'غیر سنک شدہ' : 'pending'}`
+                : `${isUrdu ? 'آف لائن' : 'Offline'} (${syncStatus.pendingCount})`}
+            </span>
+          </div>
 
-          {isOnline && (
-            <button
-              onClick={handleManualSync}
-              disabled={isSyncing}
-              title={isUrdu ? 'آف لائن بلز فوری سنک کریں' : 'Sync offline bills now'}
-              className="p-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition-colors cursor-pointer disabled:opacity-50"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-blue-600' : ''}`} />
-            </button>
-          )}
+          {/* Manual "Sync Now" Button */}
+          <button
+            onClick={handleManualSync}
+            disabled={isCurrentlySyncing}
+            title={isUrdu ? 'ابھی سنک کریں' : 'Sync Now'}
+            className="px-2.5 py-1 rounded-full bg-blue-600 hover:bg-blue-700 text-white font-bold text-[11px] shadow-xs transition-all flex items-center space-x-1 cursor-pointer disabled:opacity-50"
+          >
+            <RefreshCw className="w-3 h-3" />
+            <span>{isUrdu ? 'ابھی سنک کریں' : 'Sync Now'}</span>
+          </button>
+        </div>
+      ) : syncStatus.isOnline ? (
+        // 3. Green: Synced (All records up to date)
+        <div
+          className="flex items-center space-x-1.5 px-3 py-1 rounded-full font-bold bg-emerald-50 border border-emerald-300 text-emerald-700 shadow-xs"
+          title="All local transactions are synced with Supabase cloud"
+        >
+          <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+          <span>{isUrdu ? 'سنک شدہ' : 'Synced'}</span>
+        </div>
+      ) : (
+        // 4. Offline (Local POS 100% active, 0 pending)
+        <div
+          className="flex items-center space-x-1.5 px-3 py-1 rounded-full font-bold bg-slate-100 border border-slate-300 text-slate-700"
+          title="Internet disconnected - POS operates locally with SQLite"
+        >
+          <WifiOff className="w-3.5 h-3.5 text-slate-500" />
+          <span>{isUrdu ? 'آف لائن موڈ' : 'Offline Mode'}</span>
         </div>
       )}
 

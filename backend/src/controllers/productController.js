@@ -1,4 +1,5 @@
 const { query, get, run, transaction } = require('../config/db');
+const syncService = require('../services/syncService');
 
 /**
  * Helper to generate sequential unique serial numbers for a product
@@ -291,6 +292,8 @@ async function createProduct(req, res) {
       return productId;
     });
 
+    syncService.enqueueSync('products', result, 'insert');
+
     return res.status(201).json({
       success: true,
       message: 'Product created successfully',
@@ -386,6 +389,8 @@ async function updateProduct(req, res) {
       }
     });
 
+    syncService.enqueueSync('products', id, 'update');
+
     return res.json({ success: true, message: 'Product updated successfully' });
   } catch (error) {
     console.error('updateProduct error:', error);
@@ -436,6 +441,8 @@ async function deleteProduct(req, res) {
       await txRun('DELETE FROM serial_numbers WHERE product_id = ?', [id]);
       await txRun('DELETE FROM products WHERE id = ?', [id]);
     });
+
+    syncService.enqueueSync('products', id, 'delete');
 
     return res.json({ success: true, message: `Product "${existing.name}" deleted successfully` });
   } catch (error) {

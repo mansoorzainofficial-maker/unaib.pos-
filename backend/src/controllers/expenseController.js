@@ -1,4 +1,5 @@
 const { query, get, run, transaction } = require('../config/db');
+const syncService = require('../services/syncService');
 
 /**
  * Get list of operational expenses
@@ -76,6 +77,8 @@ async function createExpense(req, res) {
       return ins.lastInsertRowid;
     });
 
+    syncService.enqueueSync('expenses', result, 'insert');
+
     return res.status(201).json({
       success: true,
       message: 'Expense recorded successfully',
@@ -111,6 +114,8 @@ async function deleteExpense(req, res) {
         `, [numAmount, numAmount, numAmount]);
       }
     });
+
+    syncService.enqueueSync('expenses', id, 'delete');
 
     return res.json({ success: true, message: 'Expense deleted successfully' });
   } catch (error) {

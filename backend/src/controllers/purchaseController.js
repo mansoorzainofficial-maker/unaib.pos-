@@ -1,5 +1,6 @@
 const { query, get, run, transaction } = require('../config/db');
 const { logActivity } = require('../models/ActivityLog');
+const syncService = require('../services/syncService');
 
 /**
  * Generate unique Purchase Order Number (e.g. PUR-20260909-0001)
@@ -229,6 +230,11 @@ async function createPurchase(req, res) {
         new_supplier_balance: newSupBal
       };
     });
+
+    syncService.enqueueSync('purchases', result.purchaseId, 'insert');
+    if (supplier_id) {
+      syncService.enqueueSync('suppliers', supplier_id, 'update');
+    }
 
     return res.status(201).json({
       success: true,

@@ -49,6 +49,7 @@ async function runTestSuite() {
     { method: 'GET', path: '/api/returns/sale', expectedStatus: 200, auth: true },
     { method: 'GET', path: '/api/returns/purchase', expectedStatus: 200, auth: true },
     { method: 'GET', path: '/api/warranty/serials', expectedStatus: 200, auth: true },
+    { method: 'GET', path: '/api/sync/status', expectedStatus: 200, auth: false },
     // Negative test: non-existent route MUST return 404 JSON, NOT HTML!
     { method: 'GET', path: '/api/non-existent-probe-test', expectedStatus: 404, auth: false, expectJson404: true }
   ];

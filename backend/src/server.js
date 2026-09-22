@@ -23,7 +23,9 @@ const grnRoutes = require('./routes/grnRoutes');
 const accountRoutes = require('./routes/accountRoutes');
 const activityLogRoutes = require('./routes/activityLogRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
+const syncRoutes = require('./routes/syncRoutes');
 const backupService = require('./services/backupService');
+const syncService = require('./services/syncService');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -49,6 +51,7 @@ function ensureDbInit() {
       if (!isPostgres) {
         backupService.createBackup('startup');
         backupService.startDailyScheduler();
+        syncService.startSyncScheduler(30000);
       }
     }).catch(err => {
       console.error('Failed to initialize database:', err);
@@ -127,6 +130,7 @@ app.use('/api/grn', grnRoutes);
 app.use('/api/accounts', accountRoutes);
 app.use('/api/activity-logs', activityLogRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/sync', syncRoutes);
 
 // Catch-all 404 handler for undefined /api routes: ALWAYS returns JSON, NEVER HTML!
 app.all('/api/*', (req, res) => {

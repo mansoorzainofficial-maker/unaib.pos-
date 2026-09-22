@@ -395,6 +395,21 @@ CREATE INDEX IF NOT EXISTS idx_activity_log_created ON activity_log(created_at);
 CREATE INDEX IF NOT EXISTS idx_activity_log_user ON activity_log(user_id);
 CREATE INDEX IF NOT EXISTS idx_activity_log_action ON activity_log(action);
 
+-- 24. Local-First Cloud Sync Queue
+CREATE TABLE IF NOT EXISTS sync_queue (
+    id BIGSERIAL PRIMARY KEY,
+    table_name VARCHAR(100) NOT NULL,
+    record_id VARCHAR(100) NOT NULL,
+    action VARCHAR(20) NOT NULL CHECK(action IN ('insert', 'update', 'delete')),
+    payload JSONB,
+    retry_count INTEGER DEFAULT 0,
+    status VARCHAR(20) DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'failed', 'synced')),
+    error_message TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status, id);
+
 -- Default Seeds
 INSERT INTO users (id, username, password_hash, pin, full_name, role, phone)
 VALUES 

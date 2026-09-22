@@ -15,14 +15,19 @@ try {
   }
 } catch (_) {}
 
-// Check if PostgreSQL (Supabase) is configured via environment variable
-const isPostgres = process.env.FORCE_SQLITE === 'true'
-  ? false
-  : Boolean(process.env.DATABASE_URL && process.env.DATABASE_URL.trim().length > 0);
+// Local-First Architecture:
+// Desktop POS defaults to SQLite (isPostgres = false) for ultra-fast 1-5ms zero-latency writes.
+// Supabase (pgPool) is used exclusively by the background sync worker.
+// On Vercel / serverless cloud environments (where local disk is ephemeral), isPostgres = true.
+const isVercel = Boolean(process.env.VERCEL === '1' || process.env.VERCEL === 'true' || process.env.NOW_REGION);
+const isPostgres = process.env.FORCE_POSTGRES === 'true'
+  ? true
+  : (process.env.FORCE_SQLITE === 'true' ? false : isVercel);
 
 let pgPool = null;
 
-if (isPostgres) {
+// Initialize Supabase pool if DATABASE_URL is available (for cloud sync worker or direct cloud mode)
+if (process.env.DATABASE_URL && process.env.DATABASE_URL.trim().length > 0) {
   const { Pool, types } = require('pg');
 
   // 1. NUMERIC / DECIMAL (OID 1700) -> Convert to JavaScript float
@@ -111,6 +116,24 @@ async function pingDb() {
     db.prepare('SELECT 1').get();
   }
   return { healthy: true, latencyMs: Date.now() - start };
+}
+
+function getPgPool() {
+  return pgPool;
+}
+
+/**
+ * Actively ping cloud Supabase database without affecting local queries
+ */
+async function pingCloudDb() {
+  if (!pgPool) return { connected: false, reason: 'No DATABASE_URL configured' };
+  try {
+    const start = Date.now();
+    await withRetry(() => pgPool.query('SELECT 1'), 1, 150);
+    return { connected: true, latencyMs: Date.now() - start };
+  } catch (err) {
+    return { connected: false, reason: err.message };
+  }
 }
 
 // Database file path - supports local desktop SQLite
@@ -276,8 +299,62 @@ async function transaction(fn) {
   }
 }
 
-const CURRENT_SCHEMA_VERSION = '2026_09_v2';
+const CURRENT_SCHEMA_VERSION = '2026_09_v3';
 let isSchemaInitialized = false;
+
+/**
+ * Run PostgreSQL migrations safely in background or cloud startup
+ */
+async function migratePostgresSchema() {
+  if (!pgPool) return;
+  try {
+    await withRetry(() => pgPool.query(`
+      CREATE TABLE IF NOT EXISTS schema_migrations (
+        version VARCHAR(100) PRIMARY KEY,
+        applied_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+      );
+    `));
+    const verCheck = await withRetry(() => pgPool.query('SELECT version FROM schema_migrations WHERE version = $1', [CURRENT_SCHEMA_VERSION]));
+    if (verCheck.rows.length > 0) {
+      return;
+    }
+
+    console.log(`[DB Migration] Applying PostgreSQL schema migration for version ${CURRENT_SCHEMA_VERSION}...`);
+    await pgPool.query(`
+      CREATE TABLE IF NOT EXISTS sync_queue (
+        id BIGSERIAL PRIMARY KEY,
+        table_name VARCHAR(100) NOT NULL,
+        record_id VARCHAR(100) NOT NULL,
+        action VARCHAR(20) NOT NULL CHECK(action IN ('insert', 'update', 'delete')),
+        payload JSONB,
+        retry_count INTEGER DEFAULT 0,
+        status VARCHAR(20) DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'failed', 'synced')),
+        error_message TEXT,
+        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status, id);
+    `);
+
+    const syncTables = ['invoices', 'products', 'customers', 'suppliers', 'ledger_entries', 'purchases', 'sales_returns', 'expenses'];
+    for (const tbl of syncTables) {
+      try {
+        await pgPool.query(`
+          ALTER TABLE ${tbl} ADD COLUMN IF NOT EXISTS sync_status VARCHAR(20) DEFAULT 'pending';
+          ALTER TABLE ${tbl} ADD COLUMN IF NOT EXISTS local_updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
+          ALTER TABLE ${tbl} ADD COLUMN IF NOT EXISTS server_id VARCHAR(100);
+        `);
+      } catch (tblErr) {
+        console.warn(`Postgres sync column warning for ${tbl}:`, tblErr.message);
+      }
+    }
+
+    await withRetry(() => pgPool.query('INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT (version) DO NOTHING;', [CURRENT_SCHEMA_VERSION]));
+    console.log(`✓ Recorded successful PostgreSQL schema version: ${CURRENT_SCHEMA_VERSION}`);
+  } catch (err) {
+    console.warn('PostgreSQL migration warning:', err.message);
+  }
+}
 
 /**
  * Initialize schema if not exists with version tracking
@@ -354,6 +431,9 @@ async function initDb() {
     } catch (pgErr) {
       console.warn('Postgres migration warning:', pgErr.message);
     }
+
+    // Apply sync_queue and sync columns on Supabase
+    await migratePostgresSchema();
 
     try {
       await withRetry(() => pgPool.query('INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT (version) DO NOTHING;', [CURRENT_SCHEMA_VERSION]));
@@ -582,6 +662,54 @@ async function initDb() {
     console.warn('Accounts & Activity log schema migration warning:', accMigErr.message);
   }
 
+  // Safe schema migrations for Local-First Sync Queue and sync tracking columns
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS sync_queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        table_name TEXT NOT NULL,
+        record_id TEXT NOT NULL,
+        action TEXT NOT NULL CHECK(action IN ('insert', 'update', 'delete')),
+        payload TEXT,
+        retry_count INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'processing', 'failed', 'synced')),
+        error_message TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS idx_sync_queue_status ON sync_queue(status, id);
+    `);
+
+    const syncTables = ['invoices', 'products', 'customers', 'suppliers', 'ledger_entries', 'purchases', 'sales_returns', 'expenses'];
+    for (const tbl of syncTables) {
+      try {
+        const cols = (db.prepare(`PRAGMA table_info(${tbl})`).all() || []).map(c => c.name);
+        if (!cols.includes('sync_status')) {
+          db.exec(`ALTER TABLE ${tbl} ADD COLUMN sync_status TEXT DEFAULT 'pending';`);
+        }
+        if (!cols.includes('local_updated_at')) {
+          db.exec(`ALTER TABLE ${tbl} ADD COLUMN local_updated_at DATETIME;`);
+          db.exec(`UPDATE ${tbl} SET local_updated_at = CURRENT_TIMESTAMP WHERE local_updated_at IS NULL;`);
+        }
+        if (!cols.includes('server_id')) {
+          db.exec(`ALTER TABLE ${tbl} ADD COLUMN server_id TEXT;`);
+        }
+      } catch (colErr) {
+        console.warn(`SQLite sync column warning for ${tbl}:`, colErr.message);
+      }
+    }
+    console.log("✓ SQLite: sync_queue table and sync columns verified.");
+  } catch (syncMigErr) {
+    console.warn('SQLite sync schema migration warning:', syncMigErr.message);
+  }
+
+  // Also trigger cloud schema migration in background if pgPool is configured
+  if (pgPool) {
+    migratePostgresSchema().catch(err => {
+      console.warn('[Sync Worker] Background cloud schema migration deferred:', err.message);
+    });
+  }
+
   // Record successful migration in SQLite
   try {
     db.prepare('INSERT OR IGNORE INTO schema_migrations (version) VALUES (?)').run(CURRENT_SCHEMA_VERSION);
@@ -602,6 +730,9 @@ module.exports = {
   transaction,
   initDb,
   pingDb,
+  pingCloudDb,
+  getPgPool,
+  migratePostgresSchema,
   CURRENT_SCHEMA_VERSION,
   DB_PATH,
   isPostgres,

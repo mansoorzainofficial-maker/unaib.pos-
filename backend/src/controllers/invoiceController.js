@@ -1,5 +1,6 @@
 const { query, get, run, transaction } = require('../config/db');
 const { logActivity } = require('../models/ActivityLog');
+const syncService = require('../services/syncService');
 
 /**
  * Generate unique Invoice Number (e.g. UCA-20260909-0001)
@@ -449,6 +450,13 @@ async function createInvoice(req, res) {
       fullInvoice.stock_warnings = invoiceResult.stockWarnings || [];
     }
 
+    // Local-first: immediately enqueue for background cloud sync (non-blocking)
+    syncService.enqueueSync('invoices', invoiceResult.invoiceId, 'insert');
+    const syncCustId = customerId || (fullInvoice && fullInvoice.customer_id);
+    if (syncCustId) {
+      syncService.enqueueSync('customers', syncCustId, 'update');
+    }
+
     return res.status(201).json({
       success: true,
       message: 'Sale completed successfully',
@@ -692,6 +700,8 @@ async function createCustomer(req, res) {
       created_at: new Date().toISOString()
     };
 
+    syncService.enqueueSync('customers', customerId, 'insert');
+
     return res.status(201).json({
       success: true,
       message: 'Customer registered successfully',
@@ -745,6 +755,8 @@ async function updateCustomer(req, res) {
       action: 'customer_update',
       description: `گاہک کی تفصیلات میں ترمیم: ${name.trim()} (ID: ${customerId})`
     });
+
+    syncService.enqueueSync('customers', customerId, 'update');
 
     return res.json({
       success: true,
@@ -817,6 +829,8 @@ async function deleteCustomer(req, res) {
       action: 'customer_delete',
       description: `گاہک ڈیلیٹ کیا گیا: ${existing.name} (ID: ${customerId})`
     });
+
+    syncService.enqueueSync('customers', customerId, 'delete');
 
     return res.json({
       success: true,
@@ -944,6 +958,8 @@ async function voidInvoice(req, res) {
       description: `انوائس منسوخ #${voidResult.invoice_number} - وجہ: ${void_reason}`
     });
 
+    syncService.enqueueSync('invoices', invoiceId, 'update');
+
     return res.json({
       success: true,
       message: `Invoice #${voidResult.invoice_number} successfully voided. Stock & Khata restored.`,
@@ -1002,6 +1018,8 @@ async function deleteInvoice(req, res) {
       // 4. Delete invoice record
       await txRun('DELETE FROM invoices WHERE id = ?', [invoiceId]);
     });
+
+    syncService.enqueueSync('invoices', invoiceId, 'delete');
 
     return res.json({
       success: true,
