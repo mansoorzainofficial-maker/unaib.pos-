@@ -214,12 +214,17 @@ async function createSaleReturn(req, res) {
         `, [totalRefund, totalRefund, cashierId]);
       }
 
-      return { returnId, returnNumber, totalRefund };
+      return { returnId, returnNumber, totalRefund, customerId: resolvedCustomerId };
     });
 
-    syncService.enqueueSync('sales_returns', result.returnId, 'insert');
-    if (customer_id) {
-      syncService.enqueueSync('customers', customer_id, 'update');
+    try {
+      syncService.enqueueSync('sales_returns', result.returnId, 'insert');
+      const syncCustId = result.customerId || (customer_id ? Number(customer_id) : null);
+      if (syncCustId) {
+        syncService.enqueueSync('customers', syncCustId, 'update');
+      }
+    } catch (syncErr) {
+      console.warn('Non-blocking sync enqueue error:', syncErr);
     }
 
     res.status(201).json({
@@ -372,8 +377,12 @@ async function createPurchaseReturn(req, res) {
       return { returnId, returnNumber, totalAmount };
     });
 
-    if (supplier_id) {
-      syncService.enqueueSync('suppliers', supplier_id, 'update');
+    try {
+      if (supplier_id) {
+        syncService.enqueueSync('suppliers', supplier_id, 'update');
+      }
+    } catch (syncErr) {
+      console.warn('Non-blocking sync enqueue error:', syncErr);
     }
 
     res.status(201).json({

@@ -675,7 +675,12 @@ export default function POSScreen({ onLowStockChange }) {
         await saveOffline(payload, processedCart, finalCustomerName);
       }
     } catch (err) {
-      setErrorMsg(err.message || 'Transaction failed');
+      console.error('POS Checkout Error:', err);
+      let friendlyMsg = err.message || (isUrdu ? 'بل محفوظ کرنے میں خرابی پیش آئی' : 'Transaction failed');
+      if (friendlyMsg.includes('is not defined') || friendlyMsg.includes('Cannot read properties') || friendlyMsg.includes('Unexpected token')) {
+        friendlyMsg = isUrdu ? 'بل پروسیسنگ میں تکنیکی خرابی پیش آئی، براہ کرم دوبارہ کوشش کریں۔' : 'Technical error processing invoice, please retry.';
+      }
+      setErrorMsg(friendlyMsg);
     } finally {
       setIsSubmitting(false);
     }

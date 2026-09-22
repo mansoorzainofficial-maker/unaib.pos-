@@ -85,13 +85,19 @@ export default function ThermalReceipt({ invoice, onClose }) {
   const displayInvNo = getDisplayInvoiceNo();
 
   const getCustomerDisplayName = (name, isUrdu) => {
-    if (!name) return isUrdu ? 'عام واک ان گاہک' : 'Walk-in Customer';
+    if (!name) return isUrdu ? 'عام واک ان گاہک' : 'Walk-in Retail';
     const lower = String(name).trim().toLowerCase();
-    if (lower === 'walk-in customer' || lower === 'walk-in' || lower === 'walk in') {
-      return isUrdu ? 'عام واک ان گاہک' : 'Walk-in Customer';
+    if (
+      lower === 'walk-in customer' ||
+      lower === 'walk-in' ||
+      lower === 'walk in' ||
+      lower === 'walk-in retail' ||
+      lower === 'عام واک ان گاہک'
+    ) {
+      return isUrdu ? 'عام واک ان گاہک' : 'Walk-in Retail';
     }
-    if (lower.startsWith('walk-in udhar')) {
-      return isUrdu ? name.replace(/walk-in udhar/i, 'واک ان ادھار گاہک') : name;
+    if (lower.startsWith('walk-in udhar') || lower.startsWith('واک ان ادھار گاہک') || lower.startsWith('walk-in credit')) {
+      return isUrdu ? 'واک ان ادھار گاہک' : 'Walk-in Credit';
     }
     if (lower === 'valued customer') {
       return isUrdu ? 'محترم گاہک' : 'Valued Customer';

@@ -231,9 +231,13 @@ async function createPurchase(req, res) {
       };
     });
 
-    syncService.enqueueSync('purchases', result.purchaseId, 'insert');
-    if (supplier_id) {
-      syncService.enqueueSync('suppliers', supplier_id, 'update');
+    try {
+      syncService.enqueueSync('purchases', result.purchaseId, 'insert');
+      if (supplier_id) {
+        syncService.enqueueSync('suppliers', supplier_id, 'update');
+      }
+    } catch (syncErr) {
+      console.warn('Non-blocking sync enqueue error:', syncErr);
     }
 
     return res.status(201).json({

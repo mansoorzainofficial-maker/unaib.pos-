@@ -430,7 +430,7 @@ async function createInvoice(req, res) {
         }
       }
 
-      return { invoiceId, invoiceNumber, stockWarnings };
+      return { invoiceId, invoiceNumber, stockWarnings, customerId };
     });
 
     if (invoiceResult.already_synced) {
@@ -451,10 +451,14 @@ async function createInvoice(req, res) {
     }
 
     // Local-first: immediately enqueue for background cloud sync (non-blocking)
-    syncService.enqueueSync('invoices', invoiceResult.invoiceId, 'insert');
-    const syncCustId = customerId || (fullInvoice && fullInvoice.customer_id);
-    if (syncCustId) {
-      syncService.enqueueSync('customers', syncCustId, 'update');
+    try {
+      syncService.enqueueSync('invoices', invoiceResult.invoiceId, 'insert');
+      const syncCustId = invoiceResult.customerId || (fullInvoice && fullInvoice.customer_id) || (customer_id ? Number(customer_id) : null);
+      if (syncCustId) {
+        syncService.enqueueSync('customers', syncCustId, 'update');
+      }
+    } catch (syncErr) {
+      console.warn('Non-blocking sync enqueue error:', syncErr);
     }
 
     return res.status(201).json({
@@ -465,7 +469,7 @@ async function createInvoice(req, res) {
     });
   } catch (error) {
     console.error('Sale transaction failed:', error);
-    return res.status(400).json({ success: false, message: error.message });
+    return res.status(400).json({ success: false, message: error.message || 'سیل محفوظ کرنے میں خرابی پیش آئی (Sale transaction failed)' });
   }
 }
 
