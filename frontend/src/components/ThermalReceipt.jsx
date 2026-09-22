@@ -14,7 +14,9 @@ import { useLanguage } from '../context/LanguageContext';
 
 export default function ThermalReceipt({ invoice, onClose }) {
   const { isUrdu } = useLanguage();
-  const [receiptWidth, setReceiptWidth] = useState('80mm'); // '58mm' or '80mm'
+  const initialStore = invoice?.store || {};
+  const defaultSize = (initialStore.receipt_size === '80mm' || initialStore.receipt_size === '58mm') ? initialStore.receipt_size : 'a5';
+  const [receiptWidth, setReceiptWidth] = useState(defaultSize); // 'a5' (A4 Half), '80mm', or '58mm'
   const [receiptLang, setReceiptLang] = useState(isUrdu ? 'ur' : 'en');
   const [isPrinting, setIsPrinting] = useState(false);
   const [printError, setPrintError] = useState('');
@@ -107,9 +109,17 @@ export default function ThermalReceipt({ invoice, onClose }) {
     setPrintError('');
     try {
       if (window.electronAPI?.printReceipt) {
+        let pageSizeOption;
+        if (receiptWidth === '58mm') {
+          pageSizeOption = { width: 58000, height: 150000 };
+        } else if (receiptWidth === '80mm') {
+          pageSizeOption = { width: 80000, height: 200000 };
+        } else {
+          pageSizeOption = 'A5';
+        }
         const res = await window.electronAPI.printReceipt({
           silent: false,
-          pageSize: receiptWidth === '58mm' ? { width: 58000, height: 150000 } : { width: 80000, height: 200000 }
+          pageSize: pageSizeOption
         });
 
         if (res && res.success === false && !res.cancelled) {
@@ -397,23 +407,35 @@ export default function ThermalReceipt({ invoice, onClose }) {
         <div className="flex items-center gap-3">
           {/* Paper Width selector */}
           <div className="flex items-center space-x-1.5">
-            <span className="text-[11px] font-semibold text-slate-600">{isUrduReceipt ? 'کاغذ سائز:' : 'Roll:'}</span>
+            <span className="text-[11px] font-semibold text-slate-600">{isUrduReceipt ? 'کاغذ سائز:' : 'Size:'}</span>
             <div className="inline-flex rounded-lg bg-slate-100 border border-slate-200 p-0.5 text-xs">
               <button
-                onClick={() => setReceiptWidth('58mm')}
-                className={`px-2 py-0.5 rounded-md font-bold transition-colors ${
-                  receiptWidth === '58mm' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                type="button"
+                onClick={() => setReceiptWidth('a5')}
+                className={`px-2.5 py-0.5 rounded-md font-bold transition-colors flex items-center gap-1 cursor-pointer ${
+                  receiptWidth === 'a5' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
                 }`}
+                title={isUrduReceipt ? 'آدھا A4 / A5 سائز کمپیوٹر بل' : 'Half A4 / A5 Computerized Invoice'}
               >
-                58mm
+                <span>📄 A4 Half (A5)</span>
               </button>
               <button
+                type="button"
                 onClick={() => setReceiptWidth('80mm')}
-                className={`px-2 py-0.5 rounded-md font-bold transition-colors ${
+                className={`px-2 py-0.5 rounded-md font-bold transition-colors cursor-pointer ${
                   receiptWidth === '80mm' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
                 80mm
+              </button>
+              <button
+                type="button"
+                onClick={() => setReceiptWidth('58mm')}
+                className={`px-2 py-0.5 rounded-md font-bold transition-colors cursor-pointer ${
+                  receiptWidth === '58mm' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                58mm
               </button>
             </div>
           </div>
@@ -555,33 +577,304 @@ export default function ThermalReceipt({ invoice, onClose }) {
         id="thermal-receipt-print-area"
         className={`bg-white text-black p-4 mt-3 rounded shadow-2xl transition-all select-text border border-gray-300 relative ${
           isUrduReceipt ? 'receipt-urdu font-urdu text-right' : 'font-mono-receipt text-left'
-        } ${receiptWidth === '58mm' ? 'w-[280px] text-[10px] leading-tight receipt-58mm' : 'w-[360px] text-xs leading-normal receipt-80mm'}`}
+        } ${
+          receiptWidth === 'a5'
+            ? 'w-full max-w-[620px] text-xs leading-normal receipt-a5 font-sans'
+            : receiptWidth === '58mm'
+            ? 'w-[280px] text-[10px] leading-tight receipt-58mm'
+            : 'w-[360px] text-xs leading-normal receipt-80mm'
+        }`}
       >
-        {/* Printable Watermark for Voided Invoices */}
-        {(invoice.status === 'void' || invoice.status === 'cancelled') && (
-          <div className="border-4 border-black text-black font-black text-center text-sm py-1 mb-2 bg-gray-200 uppercase tracking-widest font-urdu">
-            {isUrduReceipt ? '*** منسوخ شدہ بل (VOIDED BILL) ***' : '*** VOIDED / CANCELLED ***'}
-          </div>
-        )}
+        {receiptWidth === 'a5' ? (
+          /* =========================================================================
+             A4 HALF (A5: 148mm x 210mm) COMPUTERIZED INVOICE LAYOUT
+             ========================================================================= */
+          <div className="space-y-2 text-black">
+            {/* Printable Watermark for Voided Invoices */}
+            {(invoice.status === 'void' || invoice.status === 'cancelled') && (
+              <div className="border-2 border-black text-black font-black text-center text-xs py-1 mb-1.5 bg-gray-200 uppercase tracking-widest font-urdu">
+                {isUrduReceipt ? '*** منسوخ شدہ بل (VOIDED BILL) ***' : '*** VOIDED / CANCELLED ***'}
+              </div>
+            )}
 
-        {/* Header Branding */}
-        <div className="text-center border-b-2 border-black pb-2 mb-2">
-          <h1 className="text-sm md:text-base font-black tracking-tight uppercase text-black leading-tight">
-            {store.store_name}
-          </h1>
-          <p className="text-[9.5px] text-gray-800 font-bold mt-0.5">{store.store_tagline}</p>
-          <p className="text-[9px] text-gray-700 mt-1 leading-snug">{store.store_address}</p>
-          <p className="text-[9.5px] text-gray-900 font-semibold mt-0.5">
-            {isUrduReceipt ? `فون نمبر / رابطہ: ${store.store_phone}` : `Tel: ${store.store_phone}`}
-          </p>
-          {store.store_email && <p className="text-[8.5px] text-gray-600">{store.store_email}</p>}
-          {(store.tax_ntn || store.tax_strn) && (
-            <div className="text-[9px] font-bold text-gray-800 mt-0.5 flex flex-wrap justify-center gap-x-2">
-              {store.tax_ntn && <span>{isUrduReceipt ? 'این ٹی این:' : 'NTN:'} {store.tax_ntn}</span>}
-              {store.tax_strn && <span>{isUrduReceipt ? 'سیلز ٹیکس نمبر:' : 'STRN:'} {store.tax_strn}</span>}
+            {/* Header: Store Identity & Contact */}
+            <div className="border-b-2 border-black pb-1.5 text-center">
+              <h1 className="text-base md:text-lg font-black tracking-tight uppercase text-black leading-tight">
+                {store.store_name}
+              </h1>
+              <p className="text-[10px] font-bold text-gray-800">{store.store_tagline}</p>
+              <p className="text-[9px] text-gray-700 leading-snug">{store.store_address}</p>
+              <div className="flex items-center justify-center gap-4 text-[9.5px] font-semibold text-gray-900 mt-0.5">
+                <span>{isUrduReceipt ? 'رابطہ:' : 'Tel:'} {store.store_phone}</span>
+                {store.store_email && <span>{isUrduReceipt ? 'ای میل:' : 'Email:'} {store.store_email}</span>}
+              </div>
+              {(store.tax_ntn || store.tax_strn) && (
+                <div className="text-[9px] font-bold text-gray-800 mt-0.5 flex justify-center gap-x-4">
+                  {store.tax_ntn && <span>{isUrduReceipt ? 'این ٹی این:' : 'NTN:'} {store.tax_ntn}</span>}
+                  {store.tax_strn && <span>{isUrduReceipt ? 'سیلز ٹیکس نمبر:' : 'STRN:'} {store.tax_strn}</span>}
+                </div>
+              )}
             </div>
-          )}
-        </div>
+
+            {/* Memo Title & Status Ribbon */}
+            <div className="flex justify-between items-center bg-gray-100 border border-black px-2 py-0.5 rounded-xs text-[10.5px] font-bold">
+              <div className="tracking-wide uppercase text-black font-black">
+                {invoice.balance_due > 0
+                  ? (isUrduReceipt ? '★ ادھار سیلز میمو (Credit Invoice) ★' : '★ CREDIT / UDHAR SALE MEMO ★')
+                  : (isUrduReceipt ? '★ کمپیوٹر سیلز بل (Cash Bill) ★' : '★ COMPUTERIZED SALES INVOICE ★')}
+              </div>
+              <div className="font-mono text-[10.5px] font-bold text-black">
+                {isUrduReceipt ? `بل نمبر: #${displayInvNo}` : `INVOICE: #${displayInvNo}`}
+              </div>
+            </div>
+
+            {/* 2-Column Info Grid: Invoice Meta vs Customer Party */}
+            <div className="grid grid-cols-2 gap-2 text-[9.5px] border border-gray-400 rounded-xs p-1.5 bg-gray-50/50">
+              {/* Column 1: Bill Details */}
+              <div className="space-y-0.5">
+                <div className="flex justify-between">
+                  <span className="text-gray-600 font-medium">{isUrduReceipt ? 'بل کوڈ:' : 'Ref Code:'}</span>
+                  <span className="font-mono font-bold text-black">{invoice.invoice_number}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600 font-medium">{isUrduReceipt ? 'تاریخ و وقت:' : 'Date & Time:'}</span>
+                  <span className="font-mono font-semibold text-black">{formatDate(invoice.created_at)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600 font-medium">{isUrduReceipt ? 'کاؤنٹر کیشئر:' : 'Cashier:'}</span>
+                  <span className="font-semibold text-black">{invoice.cashier_name || (isUrduReceipt ? 'ایڈمن' : 'Admin')}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600 font-medium">{isUrduReceipt ? 'طریقہ ادائیگی:' : 'Payment Mode:'}</span>
+                  <span className="font-bold text-black">
+                    {invoice.payment_method === 'cash'
+                      ? (isUrduReceipt ? 'نقد کیش' : 'CASH')
+                      : invoice.payment_method === 'credit'
+                      ? (isUrduReceipt ? 'ادھار کھاتہ' : 'CREDIT')
+                      : invoice.payment_method?.toUpperCase()}
+                  </span>
+                </div>
+              </div>
+
+              {/* Column 2: Customer Party Details */}
+              <div className="space-y-0.5 border-l border-gray-300 pl-2">
+                <div className="flex justify-between">
+                  <span className="text-gray-600 font-medium">{isUrduReceipt ? 'محترم گاہک:' : 'Customer:'}</span>
+                  <span className="font-bold text-black">{getCustomerDisplayName(invoice.customer_name, isUrduReceipt)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600 font-medium">{isUrduReceipt ? 'موبائل نمبر:' : 'Phone:'}</span>
+                  <span className="font-mono font-semibold text-black">{invoice.customer_phone || '—'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600 font-medium">{isUrduReceipt ? 'پتہ / مارکیٹ:' : 'Address:'}</span>
+                  <span className="text-black truncate max-w-[140px]">{invoice.customer_address || '—'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Itemized Table (Full Width A5 Grid) */}
+            <table className="w-full border-collapse border border-black text-[9.5px]">
+              <thead>
+                <tr className="bg-gray-100 border-b border-black font-bold text-black">
+                  <th className="border-r border-black py-1 px-1 text-center w-6">#</th>
+                  <th className={`border-r border-black py-1 px-2 ${isUrduReceipt ? 'text-right' : 'text-left'}`}>
+                    {isUrduReceipt ? 'سامان و تفصیل (Item Description)' : 'Item Description & Details'}
+                  </th>
+                  <th className="border-r border-black py-1 px-1 text-center w-14">{isUrduReceipt ? 'وارنٹی' : 'Warranty'}</th>
+                  <th className="border-r border-black py-1 px-1 text-center w-8">{isUrduReceipt ? 'تعداد' : 'Qty'}</th>
+                  <th className="border-r border-black py-1 px-1.5 text-right w-18">{isUrduReceipt ? 'ریٹ' : 'Rate'}</th>
+                  <th className="py-1 px-1.5 text-right w-20">{isUrduReceipt ? 'کل رقم' : 'Total'}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {invoice.items?.map((item, idx) => (
+                  <tr key={idx} className="border-b border-gray-300 align-top">
+                    <td className="border-r border-gray-300 py-1 px-1 text-center font-mono text-[9px]">{idx + 1}</td>
+                    <td className={`border-r border-gray-300 py-1 px-2 font-semibold text-black ${isUrduReceipt ? 'text-right' : 'text-left'}`}>
+                      <div>{item.product_name}</div>
+                      {item.serial_numbers && item.serial_numbers.length > 0 && (
+                        <div className="text-[8px] font-mono text-gray-700 mt-0.5">
+                          <span className="font-bold">{isUrduReceipt ? 'سیریل نمبر: ' : 'S/N: '}</span>
+                          {item.serial_numbers.map((sn, sidx) => {
+                            const serialText = typeof sn === 'object' ? sn.serial_number : sn;
+                            return (
+                              <span key={sidx} className="inline-block mr-1 font-semibold">
+                                {serialText}{sidx < item.serial_numbers.length - 1 ? '، ' : ''}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </td>
+                    <td className="border-r border-gray-300 py-1 px-1 text-center font-mono text-[8.5px]">
+                      {item.warranty_months > 0 ? `${item.warranty_months} M` : '—'}
+                    </td>
+                    <td className="border-r border-gray-300 py-1 px-1 text-center font-mono font-bold text-black">{item.quantity}</td>
+                    <td className="border-r border-gray-300 py-1 px-1.5 text-right font-mono font-medium">{item.unit_price?.toLocaleString()}</td>
+                    <td className="py-1 px-1.5 text-right font-mono font-bold text-black">{item.total_price?.toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            {/* Financial Breakdown & Khata Summary (2 Columns) */}
+            <div className="grid grid-cols-2 gap-2 pt-0.5">
+              {/* Left Column: Khata Position & Terms */}
+              <div className="space-y-1.5">
+                {Number(invoice.show_previous_balance ?? 1) === 1 && invoice.customer_balance !== undefined && invoice.customer_balance !== null && (
+                  <div className="border border-black rounded-xs p-1.5 bg-gray-50 text-[9px] space-y-0.5">
+                    <div className="font-bold text-center border-b border-gray-300 pb-0.5 uppercase tracking-wider text-[8.5px]">
+                      {isUrduReceipt ? 'گاہک کھاتہ خلاصہ (Khata Position)' : 'Customer Khata Position'}
+                    </div>
+                    <div className="flex justify-between text-gray-700">
+                      <span>{isUrduReceipt ? 'پچھلا ادھار:' : 'Previous Due:'}</span>
+                      <span className="font-mono font-semibold">
+                        {currency} {Number(invoice.previous_customer_balance !== undefined && invoice.previous_customer_balance !== null
+                          ? invoice.previous_customer_balance
+                          : Math.max(0, (Number(invoice.customer_balance) || 0) - (Number(invoice.balance_due) || 0))
+                        ).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="flex justify-between text-gray-700">
+                      <span>{isUrduReceipt ? 'اس بل کا مال:' : 'This Bill:'}</span>
+                      <span className="font-mono font-semibold">+ {currency} {Number(invoice.grand_total || 0).toLocaleString()}</span>
+                    </div>
+                    {Number(invoice.paid_amount || 0) > 0 && (
+                      <div className="flex justify-between text-gray-700">
+                        <span>{isUrduReceipt ? 'ادا شدہ رقم:' : 'Paid:'}</span>
+                        <span className="font-mono font-semibold text-emerald-800">- {currency} {Number(invoice.paid_amount || 0).toLocaleString()}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between font-black text-black pt-0.5 border-t border-gray-300 text-[10px]">
+                      <span>{isUrduReceipt ? 'کل نیا کھاتہ بقایا:' : 'Net Khata Due:'}</span>
+                      <span className="font-mono">{currency} {Number(invoice.customer_balance || 0).toLocaleString()}</span>
+                    </div>
+                  </div>
+                )}
+
+                <div className="border border-gray-300 rounded-xs p-1 text-[8px] text-gray-600 leading-snug">
+                  <div className="font-bold text-gray-800 mb-0.5">{isUrduReceipt ? 'وارنٹی و شرائط:' : 'Warranty & Terms:'}</div>
+                  <p>{isUrduReceipt ? '7 دن چیک وارنٹی برائے ان سیلڈ سامان۔ برانڈڈ اشیاء کی کمپنی وارنٹی۔ جلنے یا ٹوٹنے پر وارنٹی لاگو نہیں۔ سامان بغیر بل واپس نہ ہوگا۔' : store.receipt_footer}</p>
+                </div>
+              </div>
+
+              {/* Right Column: Calculations Table */}
+              <div className="border border-black rounded-xs p-1.5 bg-gray-50 text-[9.5px] space-y-0.5">
+                <div className="flex justify-between text-gray-700">
+                  <span>{isUrduReceipt ? 'سب ٹوٹل:' : 'Subtotal:'}</span>
+                  <span className="font-mono font-medium">{currency} {(Number(invoice.subtotal || 0) + Number(invoice.extra_charges || 0)).toLocaleString()}</span>
+                </div>
+
+                {invoice.discount_amount > 0 && (
+                  <div className="flex justify-between text-gray-800">
+                    <span>{isUrduReceipt ? 'رعایت / ڈسکاؤنٹ:' : 'Discount:'}</span>
+                    <span className="font-mono font-semibold">- {currency} {invoice.discount_amount?.toLocaleString()}</span>
+                  </div>
+                )}
+
+                {invoice.tax_amount > 0 && (
+                  <div className="flex justify-between text-gray-800">
+                    <span>{isUrduReceipt ? 'سیلز ٹیکس:' : 'Tax:'} ({invoice.tax_rate}%):</span>
+                    <span className="font-mono">+ {currency} {invoice.tax_amount?.toLocaleString()}</span>
+                  </div>
+                )}
+
+                {Number(invoice.shipping_cost || 0) > 0 && (
+                  <div className="flex justify-between text-gray-800">
+                    <span>{isUrduReceipt ? 'کرایہ / کوریئر:' : 'Shipping:'}</span>
+                    <span className="font-mono font-semibold">+ {currency} {Number(invoice.shipping_cost).toLocaleString()}</span>
+                  </div>
+                )}
+
+                <div className="flex justify-between font-black text-xs md:text-sm border-t border-b border-black py-0.5 my-0.5 text-black bg-white px-1">
+                  <span>{isUrduReceipt ? 'کل رقم (Grand Total):' : 'NET TOTAL:'}</span>
+                  <span className="font-mono">{currency} {invoice.grand_total?.toLocaleString()}</span>
+                </div>
+
+                <div className="flex justify-between">
+                  <span className="font-medium text-gray-800">{isUrduReceipt ? 'وصول ہوئی رقم:' : 'Amount Paid:'}</span>
+                  <span className="font-mono font-bold text-black">{currency} {invoice.paid_amount?.toLocaleString()}</span>
+                </div>
+
+                {invoice.balance_due > 0 ? (
+                  <div className="flex justify-between font-bold text-[10.5px] text-red-700 bg-red-50 border border-red-500 px-1 py-0.5 rounded-xs">
+                    <span>{isUrduReceipt ? 'بقایا واجب الادا:' : 'Balance Due:'}</span>
+                    <span className="font-mono font-black">{currency} {invoice.balance_due?.toLocaleString()}</span>
+                  </div>
+                ) : (
+                  <div className="flex justify-between font-bold text-[9px] text-emerald-800 bg-emerald-50 border border-emerald-500 px-1 py-0.5 rounded-xs">
+                    <span>{isUrduReceipt ? 'ادائیگی:' : 'Status:'}</span>
+                    <span className="font-black uppercase">{isUrduReceipt ? 'مکمل ادا شدہ' : 'PAID IN FULL'}</span>
+                  </div>
+                )}
+
+                {invoice.change_amount > 0 && (
+                  <div className="flex justify-between font-bold text-[9px] text-gray-900">
+                    <span>{isUrduReceipt ? 'بقایا واپسی:' : 'Change Returned:'}</span>
+                    <span className="font-mono">{currency} {invoice.change_amount?.toLocaleString()}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Formal Wholesale Signatures Section */}
+            <div className="grid grid-cols-2 gap-6 pt-4 text-[9px]">
+              <div className="text-center">
+                <div className="border-t border-dashed border-gray-400 pt-0.5 font-semibold text-gray-800">
+                  {isUrduReceipt ? 'دستخط گاہک (Customer Signature)' : 'Customer Signature'}
+                </div>
+              </div>
+              <div className="text-center">
+                <div className="border-t border-dashed border-gray-400 pt-0.5 font-semibold text-gray-800">
+                  {isUrduReceipt ? 'دستخط و مہر دکاندار (Authorized Signature)' : 'Authorized Signature & Stamp'}
+                </div>
+              </div>
+            </div>
+
+            {/* Footer Barcode & Thanks */}
+            <div className="text-center pt-1 border-t border-gray-300">
+              <div className="py-0.5">
+                {renderSvgBarcode(invoice.invoice_number)}
+                <div className="text-[8px] font-mono font-bold text-gray-800 tracking-wider">
+                  *{invoice.invoice_number}*
+                </div>
+              </div>
+              <p className="text-[9px] font-black uppercase text-black mt-0.5">
+                {isUrduReceipt ? '*** آپ کے کاروبار کا شکریہ! ***' : '*** THANK YOU FOR YOUR BUSINESS! ***'}
+              </p>
+            </div>
+          </div>
+        ) : (
+          /* =========================================================================
+             STANDARD THERMAL ROLL LAYOUT (58mm / 80mm)
+             ========================================================================= */
+          <div>
+            {/* Printable Watermark for Voided Invoices */}
+            {(invoice.status === 'void' || invoice.status === 'cancelled') && (
+              <div className="border-4 border-black text-black font-black text-center text-sm py-1 mb-2 bg-gray-200 uppercase tracking-widest font-urdu">
+                {isUrduReceipt ? '*** منسوخ شدہ بل (VOIDED BILL) ***' : '*** VOIDED / CANCELLED ***'}
+              </div>
+            )}
+
+            {/* Header Branding */}
+            <div className="text-center border-b-2 border-black pb-2 mb-2">
+              <h1 className="text-sm md:text-base font-black tracking-tight uppercase text-black leading-tight">
+                {store.store_name}
+              </h1>
+              <p className="text-[9.5px] text-gray-800 font-bold mt-0.5">{store.store_tagline}</p>
+              <p className="text-[9px] text-gray-700 mt-1 leading-snug">{store.store_address}</p>
+              <p className="text-[9.5px] text-gray-900 font-semibold mt-0.5">
+                {isUrduReceipt ? `فون نمبر / رابطہ: ${store.store_phone}` : `Tel: ${store.store_phone}`}
+              </p>
+              {store.store_email && <p className="text-[8.5px] text-gray-600">{store.store_email}</p>}
+              {(store.tax_ntn || store.tax_strn) && (
+                <div className="text-[9px] font-bold text-gray-800 mt-0.5 flex flex-wrap justify-center gap-x-2">
+                  {store.tax_ntn && <span>{isUrduReceipt ? 'این ٹی این:' : 'NTN:'} {store.tax_ntn}</span>}
+                  {store.tax_strn && <span>{isUrduReceipt ? 'سیلز ٹیکس نمبر:' : 'STRN:'} {store.tax_strn}</span>}
+                </div>
+              )}
+            </div>
 
         {/* PROMINENT INVOICE / BILL NUMBER HEADER */}
         <div className="border-2 border-black rounded-sm p-1.5 mb-2 text-center bg-gray-50">
@@ -806,10 +1099,12 @@ export default function ThermalReceipt({ invoice, onClose }) {
               : store.receipt_footer}
           </p>
 
-          <p className="text-[9px] font-black mt-1.5 uppercase tracking-wide text-black font-urdu">
-            {isUrduReceipt ? '*** آپ کی تشریف آوری کا بہت شکریہ! ***' : '*** Thank You For Your Business! ***'}
-          </p>
+            <p className="text-[9px] font-black mt-1.5 uppercase tracking-wide text-black font-urdu">
+              {isUrduReceipt ? '*** آپ کی تشریف آوری کا بہت شکریہ! ***' : '*** Thank You For Your Business! ***'}
+            </p>
+          </div>
         </div>
+      )}
       </div>
     </div>
   );

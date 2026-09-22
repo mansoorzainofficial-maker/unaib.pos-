@@ -96,6 +96,14 @@ ipcMain.handle('get-printers', async () => {
 ipcMain.handle('print-receipt', async (event, options = {}) => {
   if (!mainWindow) return { success: false, error: 'Window not available' };
   try {
+    let targetPageSize = options.pageSize || 'Letter';
+    if (typeof targetPageSize === 'string') {
+      const lower = targetPageSize.toLowerCase();
+      if (lower === 'a5') targetPageSize = 'A5';
+      else if (lower === 'a4') targetPageSize = 'A4';
+      else if (lower === 'letter') targetPageSize = 'Letter';
+    }
+
     const printOptions = {
       silent: options.silent || false,
       printBackground: true,
@@ -103,7 +111,7 @@ ipcMain.handle('print-receipt', async (event, options = {}) => {
       margins: {
         marginType: 'none'
       },
-      pageSize: options.pageSize || 'Letter'
+      pageSize: targetPageSize
     };
 
     return new Promise((resolve) => {
