@@ -44,7 +44,7 @@ function seed() {
     { key: 'store_email', value: 'sales@unaibcomputers.com' },
     { key: 'currency_symbol', value: 'Rs.' },
     { key: 'tax_rate', value: '0' },
-    { key: 'receipt_size', value: '80mm' }, // 58mm or 80mm
+    { key: 'receipt_size', value: 'a4' }, // a4, a5, 80mm, or 58mm
     { key: 'receipt_footer', value: 'Warranty Terms: 7 days check warranty for unsealed items. 1-2 year brand warranty for serialized components. Physical/burn damage voids warranty.' },
     { key: 'invoice_prefix', value: 'UCA' }
   ];

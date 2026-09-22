@@ -267,11 +267,12 @@ export default function SettingsScreen() {
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Default Roll / Page Size</label>
                 <select
-                  value={settings.receipt_size}
+                  value={settings.receipt_size || 'a4'}
                   onChange={(e) => setSettings({ ...settings, receipt_size: e.target.value })}
                   className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 focus:outline-hidden focus:border-emerald-500"
                 >
-                  <option value="a5">📄 A4 Half / A5 (Laser & DeskJet Printer)</option>
+                  <option value="a4">📄 A4 (Standard Laser & DeskJet Printer) - تجویز کردہ</option>
+                  <option value="a5">📄 A4 Half / A5 (Compact Laser Bill)</option>
                   <option value="80mm">80mm (Standard POS Thermal Roll)</option>
                   <option value="58mm">58mm (Compact Mobile/Desk Thermal)</option>
                 </select>

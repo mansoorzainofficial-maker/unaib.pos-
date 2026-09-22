@@ -15,8 +15,8 @@ import { useLanguage } from '../context/LanguageContext';
 export default function ThermalReceipt({ invoice, onClose }) {
   const { isUrdu } = useLanguage();
   const initialStore = invoice?.store || {};
-  const defaultSize = (initialStore.receipt_size === '80mm' || initialStore.receipt_size === '58mm') ? initialStore.receipt_size : 'a5';
-  const [receiptWidth, setReceiptWidth] = useState(defaultSize); // 'a5' (A4 Half), '80mm', or '58mm'
+  const defaultSize = (initialStore.receipt_size === '80mm' || initialStore.receipt_size === '58mm' || initialStore.receipt_size === 'a5') ? initialStore.receipt_size : 'a4';
+  const [receiptWidth, setReceiptWidth] = useState(defaultSize); // 'a4' (Full Page A4), 'a5' (A4 Half), '80mm', or '58mm'
   const [receiptLang, setReceiptLang] = useState(isUrdu ? 'ur' : 'en');
   const [isPrinting, setIsPrinting] = useState(false);
   const [printError, setPrintError] = useState('');
@@ -120,8 +120,10 @@ export default function ThermalReceipt({ invoice, onClose }) {
           pageSizeOption = { width: 58000, height: 150000 };
         } else if (receiptWidth === '80mm') {
           pageSizeOption = { width: 80000, height: 200000 };
-        } else {
+        } else if (receiptWidth === 'a5') {
           pageSizeOption = 'A5';
+        } else {
+          pageSizeOption = 'A4';
         }
         const res = await window.electronAPI.printReceipt({
           silent: false,
@@ -417,13 +419,23 @@ export default function ThermalReceipt({ invoice, onClose }) {
             <div className="inline-flex rounded-lg bg-slate-100 border border-slate-200 p-0.5 text-xs">
               <button
                 type="button"
-                onClick={() => setReceiptWidth('a5')}
+                onClick={() => setReceiptWidth('a4')}
                 className={`px-2.5 py-0.5 rounded-md font-bold transition-colors flex items-center gap-1 cursor-pointer ${
+                  receiptWidth === 'a4' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+                title={isUrduReceipt ? 'مکمل A4 سائز کمپیوٹرائزڈ بل (لیزر پرنٹر)' : 'Full A4 Standard Computerized Invoice'}
+              >
+                <span>📄 A4 (Full Page)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setReceiptWidth('a5')}
+                className={`px-2 py-0.5 rounded-md font-bold transition-colors flex items-center gap-1 cursor-pointer ${
                   receiptWidth === 'a5' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
                 }`}
                 title={isUrduReceipt ? 'آدھا A4 / A5 سائز کمپیوٹر بل' : 'Half A4 / A5 Computerized Invoice'}
               >
-                <span>📄 A4 Half (A5)</span>
+                <span>📄 A5 (A4 Half)</span>
               </button>
               <button
                 type="button"
@@ -584,16 +596,18 @@ export default function ThermalReceipt({ invoice, onClose }) {
         className={`bg-white text-black p-4 mt-3 rounded shadow-2xl transition-all select-text border border-gray-300 relative ${
           isUrduReceipt ? 'receipt-urdu font-urdu text-right' : 'font-mono-receipt text-left'
         } ${
-          receiptWidth === 'a5'
+          receiptWidth === 'a4'
+            ? 'w-full max-w-[760px] text-xs leading-normal receipt-a4 font-sans'
+            : receiptWidth === 'a5'
             ? 'w-full max-w-[620px] text-xs leading-normal receipt-a5 font-sans'
             : receiptWidth === '58mm'
             ? 'w-[280px] text-[10px] leading-tight receipt-58mm'
             : 'w-[360px] text-xs leading-normal receipt-80mm'
         }`}
       >
-        {receiptWidth === 'a5' ? (
+        {receiptWidth === 'a4' || receiptWidth === 'a5' ? (
           /* =========================================================================
-             A4 HALF (A5: 148mm x 210mm) COMPUTERIZED INVOICE LAYOUT
+             A4 / A5 COMPUTERIZED INVOICE LAYOUT (Laser & DeskJet Printer)
              ========================================================================= */
           <div className="space-y-2 text-black">
             {/* Printable Watermark for Voided Invoices */}
@@ -605,11 +619,11 @@ export default function ThermalReceipt({ invoice, onClose }) {
 
             {/* Header: Store Identity & Contact */}
             <div className="border-b-2 border-black pb-1.5 text-center">
-              <h1 className="text-base md:text-lg font-black tracking-tight uppercase text-black leading-tight">
+              <h1 className={`${receiptWidth === 'a4' ? 'text-lg md:text-xl' : 'text-base md:text-lg'} font-black tracking-tight uppercase text-black leading-tight`}>
                 {store.store_name}
               </h1>
-              <p className="text-[10px] font-bold text-gray-800">{store.store_tagline}</p>
-              <p className="text-[9px] text-gray-700 leading-snug">{store.store_address}</p>
+              <p className={`${receiptWidth === 'a4' ? 'text-xs' : 'text-[10px]'} font-bold text-gray-800`}>{store.store_tagline}</p>
+              <p className={`${receiptWidth === 'a4' ? 'text-[10px]' : 'text-[9px]'} text-gray-700 leading-snug`}>{store.store_address}</p>
               <div className="flex items-center justify-center gap-4 text-[9.5px] font-semibold text-gray-900 mt-0.5">
                 <span>{isUrduReceipt ? 'رابطہ:' : 'Tel:'} {store.store_phone}</span>
                 {store.store_email && <span>{isUrduReceipt ? 'ای میل:' : 'Email:'} {store.store_email}</span>}
@@ -623,11 +637,15 @@ export default function ThermalReceipt({ invoice, onClose }) {
             </div>
 
             {/* Memo Title & Status Ribbon */}
-            <div className="flex justify-between items-center bg-gray-100 border border-black px-2 py-0.5 rounded-xs text-[10.5px] font-bold">
+            <div className="flex justify-between items-center bg-gray-100 border border-black px-2.5 py-1 rounded-xs text-[10.5px] font-bold">
               <div className="tracking-wide uppercase text-black font-black">
                 {invoice.balance_due > 0
-                  ? (isUrduReceipt ? '★ ادھار سیلز میمو (Credit Invoice) ★' : '★ CREDIT / UDHAR SALE MEMO ★')
-                  : (isUrduReceipt ? '★ کمپیوٹر سیلز بل (Cash Bill) ★' : '★ COMPUTERIZED SALES INVOICE ★')}
+                  ? (isUrduReceipt
+                      ? `★ ادھار سیلز میمو (${receiptWidth === 'a4' ? 'A4' : 'A5'} Credit Invoice) ★`
+                      : `★ CREDIT / UDHAR SALE MEMO (${receiptWidth === 'a4' ? 'A4' : 'A5'}) ★`)
+                  : (isUrduReceipt
+                      ? `★ کمپیوٹر سیلز بل (${receiptWidth === 'a4' ? 'A4' : 'A5'} Cash Bill) ★`
+                      : `★ COMPUTERIZED SALES INVOICE (${receiptWidth === 'a4' ? 'A4' : 'A5'}) ★`)}
               </div>
               <div className="font-mono text-[10.5px] font-bold text-black">
                 {isUrduReceipt ? `بل نمبر: #${displayInvNo}` : `INVOICE: #${displayInvNo}`}
@@ -825,7 +843,7 @@ export default function ThermalReceipt({ invoice, onClose }) {
             </div>
 
             {/* Formal Wholesale Signatures Section */}
-            <div className="grid grid-cols-2 gap-6 pt-4 text-[9px]">
+            <div className={`grid grid-cols-2 gap-6 ${receiptWidth === 'a4' ? 'pt-8 text-[10px]' : 'pt-4 text-[9px]'}`}>
               <div className="text-center">
                 <div className="border-t border-dashed border-gray-400 pt-0.5 font-semibold text-gray-800">
                   {isUrduReceipt ? 'دستخط گاہک (Customer Signature)' : 'Customer Signature'}
