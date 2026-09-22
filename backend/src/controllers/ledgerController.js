@@ -133,9 +133,13 @@ async function recordPayment(req, res) {
     });
 
     if (updatedStatement && updatedStatement.new_entry_id) {
-      syncService.enqueueSync('ledger_entries', updatedStatement.new_entry_id, 'insert');
-      const targetTable = (party_type === 'supplier') ? 'suppliers' : 'customers';
-      syncService.enqueueSync(targetTable, Number(party_id), 'update');
+      try {
+        syncService.enqueueSync('ledger_entries', updatedStatement.new_entry_id, 'insert');
+        const targetTable = (party_type === 'supplier') ? 'suppliers' : 'customers';
+        syncService.enqueueSync(targetTable, Number(party_id), 'update');
+      } catch (syncErr) {
+        console.warn('Non-blocking sync enqueue error:', syncErr);
+      }
     }
 
     res.status(201).json({

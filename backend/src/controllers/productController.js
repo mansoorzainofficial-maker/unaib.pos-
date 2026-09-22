@@ -292,7 +292,11 @@ async function createProduct(req, res) {
       return productId;
     });
 
-    syncService.enqueueSync('products', result, 'insert');
+    try {
+      syncService.enqueueSync('products', result, 'insert');
+    } catch (syncErr) {
+      console.warn('Non-blocking sync enqueue error:', syncErr);
+    }
 
     return res.status(201).json({
       success: true,
@@ -389,7 +393,11 @@ async function updateProduct(req, res) {
       }
     });
 
-    syncService.enqueueSync('products', id, 'update');
+    try {
+      syncService.enqueueSync('products', id, 'update');
+    } catch (syncErr) {
+      console.warn('Non-blocking sync enqueue error:', syncErr);
+    }
 
     return res.json({ success: true, message: 'Product updated successfully' });
   } catch (error) {
@@ -442,7 +450,11 @@ async function deleteProduct(req, res) {
       await txRun('DELETE FROM products WHERE id = ?', [id]);
     });
 
-    syncService.enqueueSync('products', id, 'delete');
+    try {
+      syncService.enqueueSync('products', id, 'delete');
+    } catch (syncErr) {
+      console.warn('Non-blocking sync enqueue error:', syncErr);
+    }
 
     return res.json({ success: true, message: `Product "${existing.name}" deleted successfully` });
   } catch (error) {

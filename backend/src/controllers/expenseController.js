@@ -77,7 +77,11 @@ async function createExpense(req, res) {
       return ins.lastInsertRowid;
     });
 
-    syncService.enqueueSync('expenses', result, 'insert');
+    try {
+      syncService.enqueueSync('expenses', result, 'insert');
+    } catch (syncErr) {
+      console.warn('Non-blocking sync enqueue error:', syncErr);
+    }
 
     return res.status(201).json({
       success: true,
@@ -115,7 +119,11 @@ async function deleteExpense(req, res) {
       }
     });
 
-    syncService.enqueueSync('expenses', id, 'delete');
+    try {
+      syncService.enqueueSync('expenses', id, 'delete');
+    } catch (syncErr) {
+      console.warn('Non-blocking sync enqueue error:', syncErr);
+    }
 
     return res.json({ success: true, message: 'Expense deleted successfully' });
   } catch (error) {

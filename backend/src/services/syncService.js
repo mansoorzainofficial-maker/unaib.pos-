@@ -438,6 +438,47 @@ async function syncQueueItem(item, pgClient, db) {
     return { success: true, server_id: serverExpId };
   }
 
+  if (table_name === 'purchase_returns') {
+    const ret = db.prepare('SELECT * FROM purchase_returns WHERE id = ?').get(numId);
+    if (!ret) return { success: true, skipped: 'Purchase return not found locally' };
+
+    const items = db.prepare('SELECT * FROM purchase_return_items WHERE purchase_return_id = ?').all(numId) || [];
+    const checkRes = await pgClient.query('SELECT id FROM purchase_returns WHERE return_number = $1', [ret.return_number]);
+    let serverRetId = null;
+
+    if (checkRes.rows.length > 0) {
+      serverRetId = checkRes.rows[0].id;
+    } else {
+      const insRes = await pgClient.query(`
+        INSERT INTO purchase_returns (
+          return_number, purchase_number, supplier_id, supplier_name,
+          total_amount, refund_mode, reason, created_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        RETURNING id
+      `, [
+        ret.return_number, ret.purchase_number, ret.supplier_id, ret.supplier_name,
+        ret.total_amount, ret.refund_mode, ret.reason,
+        ret.created_at || new Date().toISOString()
+      ]);
+      serverRetId = insRes.rows[0].id;
+    }
+
+    if (serverRetId && items.length > 0) {
+      await pgClient.query('DELETE FROM purchase_return_items WHERE purchase_return_id = $1', [serverRetId]);
+      for (const it of items) {
+        await pgClient.query(`
+          INSERT INTO purchase_return_items (purchase_return_id, product_name, quantity, unit_cost, total_amount)
+          VALUES ($1, $2, $3, $4, $5)
+        `, [serverRetId, it.product_name, it.quantity, it.unit_cost, it.total_amount]);
+      }
+    }
+
+    try {
+      db.prepare("UPDATE purchase_returns SET sync_status = 'synced', server_id = ? WHERE id = ?").run(String(serverRetId), numId);
+    } catch (_) {}
+    return { success: true, server_id: serverRetId };
+  }
+
   return { success: true, skipped: 'Unhandled table' };
 }
 

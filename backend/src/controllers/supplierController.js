@@ -95,7 +95,11 @@ async function createSupplier(req, res) {
       description: `نیا سپلائر رجسٹرڈ: ${name.trim()} (${phone ? phone.trim() : 'کوئی فون نہیں'})${openBal > 0 ? ` (ابتدائی بقایا: Rs. ${openBal})` : ''}`
     });
 
-    syncService.enqueueSync('suppliers', newSupplier.id, 'insert');
+    try {
+      syncService.enqueueSync('suppliers', newSupplier.id, 'insert');
+    } catch (syncErr) {
+      console.warn('Non-blocking sync enqueue error:', syncErr);
+    }
 
     res.status(201).json({
       success: true,
@@ -150,7 +154,11 @@ async function updateSupplier(req, res) {
       description: `سپلائر کی تفصیلات میں ترمیم: ${name.trim()} (ID: ${id})`
     });
 
-    syncService.enqueueSync('suppliers', id, 'update');
+    try {
+      syncService.enqueueSync('suppliers', id, 'update');
+    } catch (syncErr) {
+      console.warn('Non-blocking sync enqueue error:', syncErr);
+    }
 
     res.json({
       success: true,
@@ -192,7 +200,11 @@ async function deleteSupplier(req, res) {
       description: `سپلائر حذف کیا گیا: ${existing.name} (ID: ${id})`
     });
 
-    syncService.enqueueSync('suppliers', id, 'delete');
+    try {
+      syncService.enqueueSync('suppliers', id, 'delete');
+    } catch (syncErr) {
+      console.warn('Non-blocking sync enqueue error:', syncErr);
+    }
 
     res.json({
       success: true,

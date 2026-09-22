@@ -378,6 +378,7 @@ async function createPurchaseReturn(req, res) {
     });
 
     try {
+      syncService.enqueueSync('purchase_returns', result.returnId, 'insert');
       if (supplier_id) {
         syncService.enqueueSync('suppliers', supplier_id, 'update');
       }
