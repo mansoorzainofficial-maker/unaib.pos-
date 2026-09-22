@@ -302,26 +302,18 @@ class Ledger {
       } else {
         await txRun('UPDATE customers SET current_balance = ? WHERE id = ?', [newBal, partyId]);
       }
-
-      // 5. Audit log
-      try {
-        await txRun(`
-          INSERT INTO activity_log (user_id, action, entity_type, entity_id, details)
-          VALUES (?, 'payment_deleted', 'ledger_entry', ?, ?)
-        `, [
-          userId || null,
-          entryId,
-          JSON.stringify({
-            reference_no: referenceNo,
-            party_type: normPartyType,
-            party_id: partyId,
-            reversed_amount: reversedAmount,
-            account_id: accountId,
-            reason
-          })
-        ]);
-      } catch (_) {}
     });
+
+    // 5. Safe Audit log outside transaction
+    try {
+      const ActivityLog = require('./ActivityLog');
+      ActivityLog.logActivity({
+        userId,
+        username: 'System',
+        action: 'payment_deleted',
+        description: `Voided payment #${referenceNo || entryId} (Rs. ${reversedAmount.toLocaleString()}) for ${normPartyType} ID ${partyId}: ${reason}`
+      });
+    } catch (_) {}
 
     // Enqueue cloud syncs
     try {
