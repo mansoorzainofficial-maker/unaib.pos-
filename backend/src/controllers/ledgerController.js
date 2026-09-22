@@ -145,9 +145,83 @@ async function recordPayment(req, res) {
   }
 }
 
+/**
+ * Get ledger overall summary (total receivable, total payable, net)
+ * GET /api/ledger/summary
+ */
+async function getSummary(req, res) {
+  try {
+    const { get } = require('../config/db');
+    const custRes = await get("SELECT COALESCE(SUM(current_balance), 0) as total FROM customers WHERE current_balance > 0");
+    const suppRes = await get("SELECT COALESCE(SUM(current_balance), 0) as total FROM suppliers WHERE current_balance > 0");
+    
+    const total_receivable = Number(custRes?.total || 0);
+    const total_payable = Number(suppRes?.total || 0);
+
+    res.json({
+      success: true,
+      summary: {
+        total_receivable,
+        total_payable,
+        net_balance: total_receivable - total_payable
+      }
+    });
+  } catch (err) {
+    console.error('Error fetching ledger summary:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch ledger summary',
+      message: err.message
+    });
+  }
+}
+
+/**
+ * Get customer statement by customer ID
+ * GET /api/ledger/customer/:id
+ */
+async function getCustomerStatement(req, res) {
+  try {
+    const partyId = Number(req.params.id);
+    if (!partyId) {
+      return res.status(400).json({ success: false, error: 'Valid customer ID is required' });
+    }
+    const statement = await Ledger.getPartyStatement('client', partyId);
+    if (!statement) {
+      return res.status(404).json({ success: false, error: 'Customer not found' });
+    }
+    res.json({ success: true, statement });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+}
+
+/**
+ * Get supplier statement by supplier ID
+ * GET /api/ledger/supplier/:id
+ */
+async function getSupplierStatement(req, res) {
+  try {
+    const partyId = Number(req.params.id);
+    if (!partyId) {
+      return res.status(400).json({ success: false, error: 'Valid supplier ID is required' });
+    }
+    const statement = await Ledger.getPartyStatement('supplier', partyId);
+    if (!statement) {
+      return res.status(404).json({ success: false, error: 'Supplier not found' });
+    }
+    res.json({ success: true, statement });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+}
+
 module.exports = {
   getAccounts,
   getParties,
   getStatement,
-  recordPayment
+  recordPayment,
+  getSummary,
+  getCustomerStatement,
+  getSupplierStatement
 };

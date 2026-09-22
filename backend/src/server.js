@@ -38,9 +38,13 @@ app.use(express.json());
 
 // Database initialization promise
 let initDbPromise = null;
+let isDbReady = false;
+
 function ensureDbInit() {
+  if (isDbReady) return Promise.resolve();
   if (!initDbPromise) {
     initDbPromise = initDb().then(() => {
+      isDbReady = true;
       console.log(`Database (${isPostgres ? 'PostgreSQL' : 'SQLite'}) initialized successfully.`);
       if (!isPostgres) {
         backupService.createBackup('startup');
@@ -49,36 +53,58 @@ function ensureDbInit() {
     }).catch(err => {
       console.error('Failed to initialize database:', err);
       initDbPromise = null;
+      isDbReady = false;
       throw err;
     });
   }
   return initDbPromise;
 }
 
-// Trigger initialization immediately
+// Trigger initialization immediately in background
 ensureDbInit().catch(() => {});
 
-// Middleware ensuring DB is ready for any /api request
+// Middleware ensuring DB is ready for any /api request (fast 0ms bypass once ready)
 app.use(async (req, res, next) => {
   if (req.path.startsWith('/api') && req.path !== '/api/health') {
-    try {
-      await ensureDbInit();
-    } catch (err) {
-      return res.status(500).json({ success: false, message: 'Database initialization failed: ' + err.message });
+    if (!isDbReady) {
+      try {
+        await ensureDbInit();
+      } catch (err) {
+        return res.status(500).json({
+          success: false,
+          error: 'DatabaseInitError',
+          message: 'Database initialization failed: ' + err.message
+        });
+      }
     }
   }
   next();
 });
 
-// Health check endpoint
-app.get('/api/health', (req, res) => {
-  const { isPostgres } = require('./config/db');
-  res.json({
-    status: 'ok',
-    service: 'Unaib Computer Accessories POS API',
-    database: isPostgres ? 'postgresql (supabase)' : 'sqlite (local)',
-    timestamp: new Date().toISOString()
-  });
+// Comprehensive Health check endpoint with live database ping & latency verification
+app.get('/api/health', async (req, res) => {
+  const { isPostgres, pingDb, CURRENT_SCHEMA_VERSION } = require('./config/db');
+  try {
+    const dbHealth = await pingDb();
+    res.json({
+      status: 'ok',
+      service: 'Unaib Computer Accessories POS API',
+      database: isPostgres ? 'postgresql (supabase)' : 'sqlite (local)',
+      db_status: 'connected',
+      db_latency_ms: dbHealth.latencyMs,
+      schema_version: CURRENT_SCHEMA_VERSION,
+      timestamp: new Date().toISOString()
+    });
+  } catch (err) {
+    res.status(503).json({
+      status: 'degraded',
+      service: 'Unaib Computer Accessories POS API',
+      database: isPostgres ? 'postgresql (supabase)' : 'sqlite (local)',
+      db_status: 'disconnected',
+      error: err.message,
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 // Register API Routes
@@ -101,6 +127,25 @@ app.use('/api/grn', grnRoutes);
 app.use('/api/accounts', accountRoutes);
 app.use('/api/activity-logs', activityLogRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+
+// Catch-all 404 handler for undefined /api routes: ALWAYS returns JSON, NEVER HTML!
+app.all('/api/*', (req, res) => {
+  res.status(404).json({
+    success: false,
+    error: 'NotFound',
+    message: `API endpoint '${req.method} ${req.originalUrl}' does not exist`
+  });
+});
+
+// Global API error handler ensuring all exceptions are cleanly serialized as JSON
+app.use('/api', (err, req, res, next) => {
+  console.error('[API Unhandled Error]', err);
+  res.status(err.status || 500).json({
+    success: false,
+    error: err.name || 'InternalServerError',
+    message: err.message || 'An internal server error occurred'
+  });
+});
 
 // Graceful shutdown backup and unhandled errors protection
 let isShuttingDown = false;

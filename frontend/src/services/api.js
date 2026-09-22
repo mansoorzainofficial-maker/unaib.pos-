@@ -1,6 +1,10 @@
-const API_BASE = (typeof window !== 'undefined' && window.location.protocol.startsWith('http'))
-  ? '/api'
+const CLOUD_API_FALLBACK = 'https://unaib-pos-v1.vercel.app/api';
+
+const PRIMARY_API_BASE = (typeof window !== 'undefined' && window.location.protocol.startsWith('http'))
+  ? (window.location.origin.includes('vercel.app') ? '/api' : (window.location.origin.replace(/\/+$/, '') + '/api'))
   : 'http://localhost:5001/api';
+
+let activeApiBase = PRIMARY_API_BASE;
 
 function getHeaders() {
   const token = localStorage.getItem('unaib_token');
@@ -20,14 +24,39 @@ async function request(endpoint, options = {}) {
     ...options
   };
 
-  const response = await fetch(`${API_BASE}${endpoint}`, config);
-  const data = await response.json();
+  try {
+    const response = await fetch(`${activeApiBase}${endpoint}`, config);
+    const text = await response.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (parseErr) {
+      console.error(`Non-JSON response from ${activeApiBase}${endpoint}:`, text.slice(0, 150));
+      throw new Error(`Invalid server response from ${endpoint}`);
+    }
 
-  if (!response.ok) {
-    throw new Error(data.message || 'API request failed');
+    if (!response.ok) {
+      throw new Error(data.message || data.error || `Request failed with status ${response.status}`);
+    }
+
+    return data;
+  } catch (err) {
+    // If local/primary failed with network error, attempt seamless failover to Cloud Vercel
+    const isNetworkError = !navigator.onLine || err.message?.includes('Failed to fetch') || err.message?.includes('NetworkError');
+    if (isNetworkError && activeApiBase !== CLOUD_API_FALLBACK && navigator.onLine) {
+      try {
+        console.warn(`[API Failover] Primary API (${activeApiBase}) unreachable. Trying cloud fallback (${CLOUD_API_FALLBACK}${endpoint})...`);
+        const fallbackRes = await fetch(`${CLOUD_API_FALLBACK}${endpoint}`, config);
+        const fbText = await fallbackRes.text();
+        const fbData = JSON.parse(fbText);
+        if (fallbackRes.ok) {
+          activeApiBase = CLOUD_API_FALLBACK;
+          return fbData;
+        }
+      } catch (_) {}
+    }
+    throw err;
   }
-
-  return data;
 }
 
 function buildQuery(params = {}) {

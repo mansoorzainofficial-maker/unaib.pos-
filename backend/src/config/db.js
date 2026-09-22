@@ -43,12 +43,74 @@ if (isPostgres) {
     ssl: { rejectUnauthorized: false },
     max: 10,
     idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 10000
+    connectionTimeoutMillis: 10000,
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10000
   });
 
   pgPool.on('error', (err) => {
     console.error('[pgPool Error]', err.message);
   });
+}
+
+/**
+ * Determine if a database error is transient and safe to auto-retry
+ */
+function isTransientDbError(err) {
+  if (!err) return false;
+  const msg = (err.message || '').toLowerCase();
+  const code = err.code || '';
+  return (
+    code === 'ECONNRESET' ||
+    code === 'ETIMEDOUT' ||
+    code === 'EPIPE' ||
+    code === '57P01' ||
+    code === '57P02' ||
+    code === '57P03' ||
+    code === '08006' ||
+    code === '08001' ||
+    code === '08004' ||
+    msg.includes('connection terminated') ||
+    msg.includes('timeout') ||
+    msg.includes('unexpectedly') ||
+    msg.includes('socket closed') ||
+    msg.includes('client has encountered a connection error')
+  );
+}
+
+/**
+ * Execute operation with exponential backoff auto-retry on transient failure
+ */
+async function withRetry(operation, maxRetries = 2, baseDelay = 200) {
+  let lastErr = null;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await operation();
+    } catch (err) {
+      lastErr = err;
+      if (!isTransientDbError(err) || attempt === maxRetries) {
+        throw err;
+      }
+      const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 50;
+      console.warn(`[pgPool Warning] Transient DB error (${err.message}). Retrying query (attempt ${attempt + 1}/${maxRetries}) in ${Math.round(delay)}ms...`);
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+  throw lastErr;
+}
+
+/**
+ * Actively ping database to verify health and report latency
+ */
+async function pingDb() {
+  const start = Date.now();
+  if (isPostgres) {
+    await withRetry(() => pgPool.query('SELECT 1'));
+  } else {
+    const db = getDb();
+    db.prepare('SELECT 1').get();
+  }
+  return { healthy: true, latencyMs: Date.now() - start };
 }
 
 // Database file path - supports local desktop SQLite
@@ -95,7 +157,7 @@ function toPostgresSql(sql) {
  */
 async function query(sql, params = []) {
   if (isPostgres) {
-    const res = await pgPool.query(toPostgresSql(sql), params);
+    const res = await withRetry(() => pgPool.query(toPostgresSql(sql), params));
     return res.rows;
   }
   const db = getDb();
@@ -109,7 +171,7 @@ async function query(sql, params = []) {
  */
 async function get(sql, params = []) {
   if (isPostgres) {
-    const res = await pgPool.query(toPostgresSql(sql), params);
+    const res = await withRetry(() => pgPool.query(toPostgresSql(sql), params));
     return res.rows[0] || null;
   }
   const db = getDb();
@@ -129,7 +191,7 @@ async function run(sql, params = []) {
     if (isInsert && !/returning\s+/i.test(pgSql)) {
       pgSql += ' RETURNING id';
     }
-    const res = await pgPool.query(pgSql, params);
+    const res = await withRetry(() => pgPool.query(pgSql, params));
     const lastId = res.rows.length > 0 && res.rows[0].id ? Number(res.rows[0].id) : null;
     return {
       changes: res.rowCount,
@@ -150,7 +212,7 @@ async function run(sql, params = []) {
  */
 async function exec(sql) {
   if (isPostgres) {
-    return await pgPool.query(sql);
+    return await withRetry(() => pgPool.query(sql));
   }
   const db = getDb();
   return db.exec(sql);
@@ -214,11 +276,37 @@ async function transaction(fn) {
   }
 }
 
+const CURRENT_SCHEMA_VERSION = '2026_09_v2';
+let isSchemaInitialized = false;
+
 /**
- * Initialize schema if not exists
+ * Initialize schema if not exists with version tracking
  */
 async function initDb() {
+  if (isSchemaInitialized) {
+    return; // Instant 0ms bypass on warm serverless and repeated invocations
+  }
+
   if (isPostgres) {
+    // 1. Fast version check: Has this migration version already been applied?
+    try {
+      await withRetry(() => pgPool.query(`
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+          version VARCHAR(100) PRIMARY KEY,
+          applied_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        );
+      `));
+      const verCheck = await withRetry(() => pgPool.query('SELECT version FROM schema_migrations WHERE version = $1', [CURRENT_SCHEMA_VERSION]));
+      if (verCheck.rows.length > 0) {
+        isSchemaInitialized = true;
+        console.log(`✓ PostgreSQL Schema is current (${CURRENT_SCHEMA_VERSION}). Skipping 417-line DDL scan.`);
+        return;
+      }
+    } catch (checkErr) {
+      console.warn('Migration version check notice:', checkErr.message);
+    }
+
+    console.log(`[DB Migration] Applying one-time schema migration for version ${CURRENT_SCHEMA_VERSION}...`);
     const schemaPath = path.join(__dirname, '../db/schema.postgres.sql');
     if (fs.existsSync(schemaPath)) {
       const schemaSql = fs.readFileSync(schemaPath, 'utf8');
@@ -266,11 +354,36 @@ async function initDb() {
     } catch (pgErr) {
       console.warn('Postgres migration warning:', pgErr.message);
     }
+
+    try {
+      await withRetry(() => pgPool.query('INSERT INTO schema_migrations (version) VALUES ($1) ON CONFLICT (version) DO NOTHING;', [CURRENT_SCHEMA_VERSION]));
+      console.log(`✓ Recorded successful schema version: ${CURRENT_SCHEMA_VERSION}`);
+    } catch (recErr) {
+      console.warn('Failed to record migration version:', recErr.message);
+    }
+
+    isSchemaInitialized = true;
     return;
   }
 
   // SQLite Initialization
   const db = getDb();
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS schema_migrations (
+        version TEXT PRIMARY KEY,
+        applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    const row = db.prepare('SELECT version FROM schema_migrations WHERE version = ?').get(CURRENT_SCHEMA_VERSION);
+    if (row) {
+      isSchemaInitialized = true;
+      console.log(`✓ SQLite Schema is current (${CURRENT_SCHEMA_VERSION}). Skipping full DDL scan.`);
+      return;
+    }
+  } catch (_) {}
+
+  console.log(`[SQLite Migration] Applying one-time schema migration for version ${CURRENT_SCHEMA_VERSION}...`);
   const schemaPath = path.join(__dirname, '../db/schema.sql');
   if (fs.existsSync(schemaPath)) {
     const schemaSql = fs.readFileSync(schemaPath, 'utf8');
@@ -468,6 +581,16 @@ async function initDb() {
   } catch (accMigErr) {
     console.warn('Accounts & Activity log schema migration warning:', accMigErr.message);
   }
+
+  // Record successful migration in SQLite
+  try {
+    db.prepare('INSERT OR IGNORE INTO schema_migrations (version) VALUES (?)').run(CURRENT_SCHEMA_VERSION);
+    console.log(`✓ Recorded successful SQLite schema version: ${CURRENT_SCHEMA_VERSION}`);
+  } catch (migRecErr) {
+    console.warn('Failed to record SQLite migration version:', migRecErr.message);
+  }
+
+  isSchemaInitialized = true;
 }
 
 module.exports = {
@@ -478,6 +601,8 @@ module.exports = {
   exec,
   transaction,
   initDb,
+  pingDb,
+  CURRENT_SCHEMA_VERSION,
   DB_PATH,
   isPostgres,
   toPostgresSql

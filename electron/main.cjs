@@ -1,18 +1,17 @@
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
 const path = require('path');
-const { spawn } = require('child_process');
 const http = require('http');
 
 let mainWindow = null;
-let serverProcess = null;
+let serverInstance = null;
 
 const isDev = process.env.NODE_ENV !== 'production' && !app.isPackaged;
 const BACKEND_PORT = process.env.PORT || 5001;
 
 function checkServerReady(port) {
   return new Promise((resolve) => {
-    const req = http.get(`http://127.0.0.1:${port}/api/settings`, (res) => {
-      resolve(true);
+    const req = http.get(`http://127.0.0.1:${port}/api/health`, (res) => {
+      resolve(res.statusCode === 200 || res.statusCode === 503);
     });
     req.on('error', () => resolve(false));
     req.setTimeout(800, () => {
@@ -22,33 +21,30 @@ function checkServerReady(port) {
   });
 }
 
+/**
+ * Ensure backend server runs reliably using Electron's embedded Node runtime.
+ * Zero dependency on external system node.exe!
+ */
 async function ensureBackendServer() {
   const isRunning = await checkServerReady(BACKEND_PORT);
   if (isRunning) {
-    console.log(`Backend server already active on port ${BACKEND_PORT}`);
-    return;
+    console.log(`[Electron] Backend server already active on port ${BACKEND_PORT}`);
+    return true;
   }
 
-  console.log(`Starting backend server on port ${BACKEND_PORT}...`);
-  const serverScript = path.join(__dirname, '../backend/src/server.js');
-  serverProcess = spawn('node', [serverScript], {
-    cwd: path.join(__dirname, '..'),
-    env: { ...process.env, PORT: String(BACKEND_PORT) },
-    stdio: 'ignore'
-  });
-
-  serverProcess.on('error', (err) => {
-    console.error('Failed to spawn backend process:', err);
-  });
-
-  // Wait for server to become responsive
-  for (let i = 0; i < 30; i++) {
-    await new Promise((r) => setTimeout(r, 250));
-    const ready = await checkServerReady(BACKEND_PORT);
-    if (ready) {
-      console.log('Backend server is live and responsive.');
-      return;
-    }
+  console.log(`[Electron] Starting embedded backend server on port ${BACKEND_PORT}...`);
+  try {
+    const { startServer } = require('../backend/src/server.js');
+    serverInstance = await startServer(BACKEND_PORT);
+    console.log(`[Electron] Embedded backend server started successfully on port ${BACKEND_PORT}`);
+    return true;
+  } catch (err) {
+    console.error('[Electron] Failed to start embedded backend server:', err);
+    dialog.showErrorBox(
+      'Unaib POS - لوکل سرور ایرر (Server Startup Error)',
+      `سسٹم کا ڈیٹا بیس سرور شروع نہیں ہو سکا۔\n\nایرر (Error): ${err.message}\nپورٹ: ${BACKEND_PORT}\n\nبراہ کرم چیک کریں کہ پورٹ 5001 کسی دوسرے سافٹ ویئر کے استعمال میں تو نہیں۔`
+    );
+    return false;
   }
 }
 
@@ -213,9 +209,9 @@ app.on('before-quit', () => {
 });
 
 app.on('window-all-closed', () => {
-  if (serverProcess) {
+  if (serverInstance && typeof serverInstance.close === 'function') {
     try {
-      serverProcess.kill();
+      serverInstance.close();
     } catch (e) {}
   }
   if (process.platform !== 'darwin') {

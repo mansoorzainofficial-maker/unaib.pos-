@@ -14,6 +14,8 @@
     "build": "npm run build:react",
     "start": "node backend/src/server.js",
     "start:electron": "cross-env NODE_ENV=production electron .",
+    "test:api": "node backend/test-endpoints.js",
+    "test": "npm run test:api",
     "pack:win": "npm run build && electron-builder --win --dir",
     "dist:win": "npm run build && electron-builder --win nsis"
   },
