@@ -28,6 +28,8 @@ import CustomerForm from '../components/CustomerForm';
 import { useLanguage } from '../context/LanguageContext';
 import { saveProductsCache, getCachedProducts, savePendingBill } from '../utils/indexedDB';
 import { syncManager } from '../utils/syncManager';
+import useSubmitGuard from '../hooks/useSubmitGuard';
+import ActionButton from '../components/ActionButton';
 
 export default function POSScreen({ onLowStockChange }) {
   const { t, isUrdu } = useLanguage();
@@ -423,8 +425,8 @@ export default function POSScreen({ onLowStockChange }) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [cart]);
 
-  // Complete Sale and Checkout
-  const handleProcessSale = async () => {
+  // Complete Sale and Checkout with synchronous anti-double-click guard
+  const [handleProcessSale, isSubmittingSale] = useSubmitGuard(async () => {
     if (cart.length === 0) {
       setErrorMsg('Cart is empty');
       return;
@@ -616,7 +618,7 @@ export default function POSScreen({ onLowStockChange }) {
     } finally {
       setIsSubmitting(false);
     }
-  };
+  }, { cooldownMs: 1500 });
 
   // Filter products in catalog pane
   const filteredProducts = products.filter(p => {
@@ -1719,25 +1721,30 @@ export default function POSScreen({ onLowStockChange }) {
               </button>
 
               {customerMode === 'party' ? (
-                <button
+                <ActionButton
                   type="button"
                   onClick={handleProcessSale}
-                  disabled={isSubmitting || (!selectedCustomerId && !customerName.trim())}
-                  className="flex-1 py-2.5 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black rounded-xl shadow-lg shadow-blue-600/20 text-xs flex items-center justify-center space-x-2 transition-all cursor-pointer"
+                  loading={isSubmitting || isSubmittingSale}
+                  loadingText={t('saving_udhar')}
+                  disabled={!selectedCustomerId && !customerName.trim()}
+                  variant="primary"
+                  icon={Printer}
+                  className="flex-1 py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-xl shadow-lg shadow-blue-600/20 text-xs"
                 >
-                  <Printer className="w-4 h-4" />
-                  <span>{isSubmitting ? t('saving_udhar') : t('save_udhar_invoice')}</span>
-                </button>
+                  {t('save_udhar_invoice')}
+                </ActionButton>
               ) : (
-                <button
+                <ActionButton
                   type="button"
                   onClick={handleProcessSale}
-                  disabled={isSubmitting}
-                  className="flex-1 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black rounded-xl shadow-lg shadow-emerald-600/20 text-xs flex items-center justify-center space-x-2 transition-all cursor-pointer"
+                  loading={isSubmitting || isSubmittingSale}
+                  loadingText={t('saving_sale')}
+                  variant="success"
+                  icon={Printer}
+                  className="flex-1 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl shadow-lg shadow-emerald-600/20 text-xs"
                 >
-                  <Printer className="w-4 h-4" />
-                  <span>{isSubmitting ? t('saving_sale') : t('complete_cash_sale')}</span>
-                </button>
+                  {t('complete_cash_sale')}
+                </ActionButton>
               )}
             </div>
           </div>

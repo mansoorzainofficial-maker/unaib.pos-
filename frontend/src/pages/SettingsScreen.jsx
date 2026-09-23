@@ -1,9 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import Modal from '../components/Modal';
+import { useSubmitGuard } from '../hooks/useSubmitGuard';
+import ActionButton from '../components/ActionButton';
 import { Settings, Store, Users, Shield, Plus, Key, Save, CheckCircle, Database, FolderOpen, Download, ShieldCheck, Archive } from 'lucide-react';
 
 export default function SettingsScreen() {
+  const [isSavingSettings, guardSaveSettings] = useSubmitGuard(1200);
+  const [isCreatingUser, guardCreateUser] = useSubmitGuard(1200);
   const [activeTab, setActiveTab] = useState('store'); // 'store', 'users', 'backups'
 
   // Store Settings state
@@ -67,7 +71,7 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleSaveSettings = async (e) => {
+  const handleSaveSettings = guardSaveSettings(async (e) => {
     e.preventDefault();
     try {
       await api.settings.update(settings);
@@ -76,9 +80,9 @@ export default function SettingsScreen() {
     } catch (err) {
       alert(err.message || 'Failed to update settings');
     }
-  };
+  });
 
-  const handleCreateUser = async (e) => {
+  const handleCreateUser = guardCreateUser(async (e) => {
     e.preventDefault();
     try {
       await api.auth.createUser(userForm);
@@ -95,7 +99,7 @@ export default function SettingsScreen() {
     } catch (err) {
       alert(err.message || 'Failed to create user');
     }
-  };
+  });
 
   const loadBackups = async () => {
     try {
@@ -375,13 +379,15 @@ export default function SettingsScreen() {
             </div>
           </div>
 
-          <button
+          <ActionButton
             type="submit"
+            isSubmitting={isSavingSettings}
+            loadingText="Saving Settings..."
             className="flex items-center space-x-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow-md shadow-emerald-600/20 transition-colors cursor-pointer"
           >
             <Save className="w-4 h-4" />
             <span>Save Store Settings</span>
-          </button>
+          </ActionButton>
         </form>
       )}
 
@@ -653,12 +659,14 @@ export default function SettingsScreen() {
             >
               Cancel
             </button>
-            <button
+            <ActionButton
               type="submit"
+              isSubmitting={isCreatingUser}
+              loadingText="Creating..."
               className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-md shadow-emerald-600/20"
             >
               Create Staff User
-            </button>
+            </ActionButton>
           </div>
         </form>
       </Modal>

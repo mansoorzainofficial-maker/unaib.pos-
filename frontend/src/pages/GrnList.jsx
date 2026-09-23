@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Truck, Plus, Search, Eye, Edit, Trash2, X, FileText, Calendar, DollarSign, Package, AlertTriangle, CheckCircle2, AlertCircle } from 'lucide-react';
 import { grnApi } from '../services/grnApi';
 import { useLanguage } from '../context/LanguageContext';
+import useSubmitGuard from '../hooks/useSubmitGuard';
+import ActionButton from '../components/ActionButton';
 
 export default function GrnList({ onNavigateToCreate, onNavigateToEdit }) {
   const { t, isUrdu } = useLanguage();
@@ -49,7 +51,7 @@ export default function GrnList({ onNavigateToCreate, onNavigateToEdit }) {
     }
   };
 
-  const handleConfirmDelete = async () => {
+  const [handleConfirmDelete, isDeletingGuard] = useSubmitGuard(async () => {
     if (!deletingGrn) return;
     setIsDeleting(true);
     setErrorMsg('');
@@ -72,7 +74,7 @@ export default function GrnList({ onNavigateToCreate, onNavigateToEdit }) {
     } finally {
       setIsDeleting(false);
     }
-  };
+  }, { cooldownMs: 1200 });
 
   const filtered = grns.filter(g => {
     if (!search.trim()) return true;
@@ -439,21 +441,17 @@ export default function GrnList({ onNavigateToCreate, onNavigateToEdit }) {
                 >
                   {isUrdu ? 'منسوخ نہ کریں' : 'Cancel'}
                 </button>
-                <button
+                <ActionButton
                   type="button"
                   onClick={handleConfirmDelete}
-                  disabled={isDeleting}
-                  className="flex items-center gap-1.5 px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl transition-all shadow-md shadow-rose-600/20 cursor-pointer disabled:opacity-50"
+                  loading={isDeleting || isDeletingGuard}
+                  loadingText={isUrdu ? 'اسٹاک کٹ رہا ہے...' : 'Deducting Stock...'}
+                  variant="danger"
+                  icon={Trash2}
+                  className="px-5 py-2 font-bold rounded-xl shadow-md shadow-rose-600/20"
                 >
-                  {isDeleting ? (
-                    <span>{isUrdu ? 'اسٹاک کٹ رہا ہے...' : 'Deducting Stock...'}</span>
-                  ) : (
-                    <>
-                      <Trash2 className="w-4 h-4" />
-                      <span>{isUrdu ? 'ہاں، رسید منسوخ اور اسٹاک کم کریں' : 'Yes, Delete & Deduct Stock'}</span>
-                    </>
-                  )}
-                </button>
+                  {isUrdu ? 'ہاں، رسید منسوخ اور اسٹاک کم کریں' : 'Yes, Delete & Deduct Stock'}
+                </ActionButton>
               </div>
             </div>
           </div>

@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import Modal from '../components/Modal';
 import { useLanguage } from '../context/LanguageContext';
+import { useSubmitGuard } from '../hooks/useSubmitGuard';
+import ActionButton from '../components/ActionButton';
 import {
   Truck,
   Plus,
@@ -22,6 +24,8 @@ import {
 
 export default function PurchasesScreen() {
   const { t, isUrdu } = useLanguage();
+  const [isPurchasing, guardPurchaseSubmit] = useSubmitGuard(1500);
+  const [isVoidGuard, guardVoidSubmit] = useSubmitGuard(1500);
   const [purchases, setPurchases] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [products, setProducts] = useState([]);
@@ -188,7 +192,7 @@ export default function PurchasesScreen() {
     }
   };
 
-  const handleConfirmVoidPurchase = async (e) => {
+  const handleConfirmVoidPurchase = guardVoidSubmit(async (e) => {
     e.preventDefault();
     if (!purchaseToVoid) return;
 
@@ -212,7 +216,7 @@ export default function PurchasesScreen() {
     } finally {
       setIsVoiding(false);
     }
-  };
+  });
 
   // Helper for serial number expansion & auto-generation
   const expandSerials = (baseText, qty) => {
@@ -336,7 +340,7 @@ export default function PurchasesScreen() {
   const balanceDue = Math.max(0, Math.round((grandTotal - paid) * 100) / 100);
   const selectedSupplier = suppliers.find(s => String(s.id) === String(supplierId));
 
-  const handleSubmitPurchase = async (e) => {
+  const handleSubmitPurchase = guardPurchaseSubmit(async (e) => {
     e.preventDefault();
     setErrorMsg('');
 
@@ -430,7 +434,7 @@ export default function PurchasesScreen() {
       console.error('Failed to create purchase:', err);
       setErrorMsg(err.response?.data?.error || err.message || 'Error creating purchase order');
     }
-  };
+  });
 
   // Print Supplier Purchase Voucher / Bill
   const handlePrintSupplierBill = async () => {
@@ -1306,12 +1310,14 @@ export default function PurchasesScreen() {
             >
               {isUrdu ? 'منسوخ کریں' : 'Cancel'}
             </button>
-            <button
+            <ActionButton
               type="submit"
+              isSubmitting={isPurchasing}
+              loadingText={isUrdu ? 'محفوظ ہو رہا ہے...' : 'Saving...'}
               className="flex-2 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-slate-950 font-bold rounded-xl text-xs shadow-sm cursor-pointer"
             >
               {isUrdu ? '✓ خریداری بل محفوظ کریں اور اسٹاک اپ ڈیٹ کریں' : 'Confirm Purchase & Update Stock'}
-            </button>
+            </ActionButton>
           </div>
         </form>
       </Modal>
@@ -1567,13 +1573,14 @@ export default function PurchasesScreen() {
             >
               {isUrdu ? 'منسوخ کریں' : 'Cancel'}
             </button>
-            <button
+            <ActionButton
               type="submit"
-              disabled={supplierSubmitting}
+              isSubmitting={supplierSubmitting}
+              loadingText={isUrdu ? 'محفوظ ہو رہا ہے...' : 'Saving...'}
               className="flex-1 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-lg text-xs shadow-xs cursor-pointer"
             >
-              {supplierSubmitting ? (isUrdu ? 'محفوظ ہو رہا ہے...' : 'Saving...') : (isUrdu ? 'سپلائر محفوظ کریں' : 'Save Supplier')}
-            </button>
+              {isUrdu ? 'سپلائر محفوظ کریں' : 'Save Supplier'}
+            </ActionButton>
           </div>
         </form>
       </Modal>
@@ -1630,14 +1637,15 @@ export default function PurchasesScreen() {
             >
               {isUrdu ? 'منسوخ (واپس)' : 'Cancel'}
             </button>
-            <button
+            <ActionButton
               type="submit"
-              disabled={isVoiding}
+              isSubmitting={isVoidGuard || isVoiding}
+              loadingText={isUrdu ? 'منسوخ ہو رہا ہے...' : 'Voiding...'}
               className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-bold rounded-lg text-xs shadow-md cursor-pointer flex items-center justify-center gap-1.5"
             >
               <Ban className="w-3.5 h-3.5" />
-              <span>{isVoiding ? (isUrdu ? 'منسوخ ہو رہا ہے...' : 'Voiding...') : (isUrdu ? 'ہاں، بل منسوخ کریں' : 'Yes, Void Purchase')}</span>
-            </button>
+              <span>{isUrdu ? 'ہاں، بل منسوخ کریں' : 'Yes, Void Purchase'}</span>
+            </ActionButton>
           </div>
         </form>
       </Modal>
@@ -1726,13 +1734,14 @@ export default function PurchasesScreen() {
             >
               {isUrdu ? 'منسوخ' : 'Cancel'}
             </button>
-            <button
+            <ActionButton
               type="submit"
-              disabled={supplierSubmitting}
+              isSubmitting={supplierSubmitting}
+              loadingText="Saving..."
               className="flex-1 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-lg cursor-pointer shadow-xs"
             >
-              {supplierSubmitting ? 'Saving...' : (isUrdu ? 'سپلائر محفوظ کریں' : 'Save Supplier')}
-            </button>
+              {isUrdu ? 'سپلائر محفوظ کریں' : 'Save Supplier'}
+            </ActionButton>
           </div>
         </form>
       </Modal>
@@ -1824,13 +1833,14 @@ export default function PurchasesScreen() {
             >
               {isUrdu ? 'منسوخ' : 'Cancel'}
             </button>
-            <button
+            <ActionButton
               type="submit"
-              disabled={productSubmitting}
+              isSubmitting={productSubmitting}
+              loadingText="Adding..."
               className="flex-1 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-lg cursor-pointer shadow-xs"
             >
-              {productSubmitting ? 'Adding...' : (isUrdu ? 'سامان شامل کریں' : 'Add Product')}
-            </button>
+              {isUrdu ? 'سامان شامل کریں' : 'Add Product'}
+            </ActionButton>
           </div>
         </form>
       </Modal>

@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { X, CheckCircle2, AlertTriangle, Loader2, Wallet } from 'lucide-react';
 import { ledgerApi } from '../services/ledgerApi';
 import { useLanguage } from '../context/LanguageContext';
+import { useSubmitGuard } from '../hooks/useSubmitGuard';
+import ActionButton from './ActionButton';
 
 export default function PaymentForm({
   isOpen,
@@ -11,6 +13,7 @@ export default function PaymentForm({
   onSuccess
 }) {
   const { t, isUrdu, formatAccountName } = useLanguage();
+  const [isGuarded, guardSubmit] = useSubmitGuard(1500);
   const [accounts, setAccounts] = useState([]);
   const [accountId, setAccountId] = useState('');
   const [amount, setAmount] = useState('');
@@ -48,7 +51,7 @@ export default function PaymentForm({
   const isOverpaying = currentDue > 0 && numAmount > currentDue;
   const isSupplier = partyType === 'supplier';
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = guardSubmit(async (e) => {
     e.preventDefault();
     setErrorMsg('');
 
@@ -92,7 +95,7 @@ export default function PaymentForm({
     } finally {
       setIsSubmitting(false);
     }
-  };
+  });
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
@@ -232,29 +235,21 @@ export default function PaymentForm({
           <div className="flex items-center space-x-2 pt-2 border-t border-slate-100">
             <button
               type="button"
-              disabled={isSubmitting}
+              disabled={isGuarded || isSubmitting}
               onClick={onClose}
               className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors cursor-pointer"
             >
               {t('cancel')}
             </button>
-            <button
+            <ActionButton
               type="submit"
-              disabled={isSubmitting}
+              isSubmitting={isGuarded || isSubmitting}
+              loadingText={t('saving_voucher')}
               className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white font-bold rounded-xl shadow-md shadow-emerald-600/20 flex items-center justify-center space-x-1.5 transition-all cursor-pointer"
             >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>{t('saving_voucher')}</span>
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>{t('btn_save_voucher')}</span>
-                </>
-              )}
-            </button>
+              <CheckCircle2 className="w-4 h-4" />
+              <span>{t('btn_save_voucher')}</span>
+            </ActionButton>
           </div>
         </form>
       </div>

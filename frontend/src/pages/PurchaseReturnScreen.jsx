@@ -14,6 +14,8 @@ import {
   Building2,
   ArrowDownLeft
 } from 'lucide-react';
+import useSubmitGuard from '../hooks/useSubmitGuard';
+import ActionButton from '../components/ActionButton';
 
 export default function PurchaseReturnScreen() {
   const { isUrdu } = useLanguage();
@@ -27,7 +29,6 @@ export default function PurchaseReturnScreen() {
   const [reason, setReason] = useState('خراب مال / ڈسٹری بیوٹر کلیم (Defective component RMA)');
 
   const [returnItems, setReturnItems] = useState([]);
-  const [submitting, setSubmitting] = useState(false);
   const [successModal, setSuccessModal] = useState(null);
   const [errorMsg, setErrorMsg] = useState('');
 
@@ -101,7 +102,7 @@ export default function PurchaseReturnScreen() {
     return returnItems.reduce((sum, item) => sum + (Number(item.quantity || 0) * Number(item.unit_cost || 0)), 0);
   };
 
-  const handleSubmit = async () => {
+  const [handleSubmit, submitting] = useSubmitGuard(async () => {
     if (!supplierId) {
       setErrorMsg(isUrdu ? 'براہ کرم سپلائر منتخب کریں۔' : 'Please select a supplier.');
       return;
@@ -111,7 +112,6 @@ export default function PurchaseReturnScreen() {
       return;
     }
 
-    setSubmitting(true);
     setErrorMsg('');
 
     const selectedSup = suppliersList.find(s => s.id === Number(supplierId));
@@ -149,10 +149,8 @@ export default function PurchaseReturnScreen() {
       }
     } catch (err) {
       setErrorMsg(err.message || 'Purchase return failed');
-    } finally {
-      setSubmitting(false);
     }
-  };
+  }, { cooldownMs: 1200 });
 
   return (
     <div className="h-full flex flex-col bg-slate-50 overflow-hidden text-slate-800">
@@ -382,21 +380,16 @@ export default function PurchaseReturnScreen() {
                   </span>
                 </div>
 
-                <button
+                <ActionButton
                   type="button"
-                  disabled={submitting}
+                  loading={submitting}
+                  loadingText={isUrdu ? 'خریداری واپسی محفوظ ہو رہی ہے...' : 'Processing Return...'}
                   onClick={handleSubmit}
-                  className="px-8 py-3 bg-purple-600 hover:bg-purple-700 text-white font-black rounded-xl text-xs flex items-center gap-2 cursor-pointer shadow-sm shadow-purple-600/20 transition-all"
+                  icon={Truck}
+                  className="px-8 py-3 bg-purple-600 hover:bg-purple-700 text-white font-black rounded-xl text-xs shadow-sm shadow-purple-600/20"
                 >
-                  {submitting ? (
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  ) : (
-                    <>
-                      <Truck className="w-4 h-4" />
-                      <span>{isUrdu ? 'خریداری واپسی مکمل کریں (Confirm Purchase Return)' : 'Confirm Purchase Return'}</span>
-                    </>
-                  )}
-                </button>
+                  {isUrdu ? 'خریداری واپسی مکمل کریں (Confirm Purchase Return)' : 'Confirm Purchase Return'}
+                </ActionButton>
               </div>
             )}
           </div>

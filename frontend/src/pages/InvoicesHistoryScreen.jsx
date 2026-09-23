@@ -4,6 +4,8 @@ import ThermalReceipt from '../components/ThermalReceipt';
 import Modal from '../components/Modal';
 import { Receipt, Search, Printer, Calendar, User, Eye, Ban, AlertTriangle, CheckCircle, RefreshCw, Trash2, Edit3, Plus, Minus, Save, ShoppingBag, X } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
+import useSubmitGuard from '../hooks/useSubmitGuard';
+import ActionButton from '../components/ActionButton';
 
 export default function InvoicesHistoryScreen() {
   const { isUrdu } = useLanguage();
@@ -18,7 +20,6 @@ export default function InvoicesHistoryScreen() {
   // Void Bill state
   const [invoiceToVoid, setInvoiceToVoid] = useState(null);
   const [voidReason, setVoidReason] = useState('');
-  const [isVoiding, setIsVoiding] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState(null);
 
   // Edit Invoice state
@@ -33,7 +34,6 @@ export default function InvoicesHistoryScreen() {
   const [editPaymentMethod, setEditPaymentMethod] = useState('cash');
   const [editPaidAmount, setEditPaidAmount] = useState(0);
   const [editNotes, setEditNotes] = useState('');
-  const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [editError, setEditError] = useState(null);
 
   // Product quick-search inside Edit Modal
@@ -87,11 +87,10 @@ export default function InvoicesHistoryScreen() {
     }
   };
 
-  const handleConfirmVoid = async (e) => {
-    e.preventDefault();
+  const [handleConfirmVoid, isVoiding] = useSubmitGuard(async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
     if (!invoiceToVoid) return;
 
-    setIsVoiding(true);
     try {
       const trimmedReason = voidReason.trim() || (isUrdu ? 'گاہک نے مال واپس کیا / کیشئر منسوخی' : 'Customer returned items / Voided by cashier');
       const res = await api.invoices.void(invoiceToVoid.id, {
@@ -116,12 +115,10 @@ export default function InvoicesHistoryScreen() {
         type: 'error',
         text: err.message || (isUrdu ? 'بل منسوخ کرنے میں خرابی ہوئی' : 'Failed to void invoice')
       });
-    } finally {
-      setIsVoiding(false);
     }
-  };
+  }, { cooldownMs: 1200 });
 
-  const handleDeletePermanent = async (inv) => {
+  const [handleDeletePermanent, isDeleting] = useSubmitGuard(async (inv) => {
     const confirmPrompt = isUrdu
       ? `کیا آپ واقعی بل نمبر #${inv.invoice_number} کو مستقل طور پر سسٹم سے ڈیلیٹ کرنا چاہتے ہیں؟ (اسٹاک اور کھاتہ خودکار بحال ہوگا)`
       : `Are you sure you want to permanently delete invoice #${inv.invoice_number}? (Stock and khata will be restored)`;
@@ -146,7 +143,7 @@ export default function InvoicesHistoryScreen() {
         text: err.message || (isUrdu ? 'بل ڈیلیٹ کرنے میں خرابی ہوئی' : 'Failed to delete invoice')
       });
     }
-  };
+  }, { cooldownMs: 1200 });
 
   // Open Edit Modal and load full invoice items
   const handleOpenEditModal = async (inv) => {
@@ -248,15 +245,14 @@ export default function InvoicesHistoryScreen() {
     setProductSearchQuery('');
   };
 
-  const handleSaveEdit = async (e) => {
-    e.preventDefault();
+  const [handleSaveEdit, isSavingEdit] = useSubmitGuard(async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
     if (!editingInvoice) return;
     if (editItems.length === 0) {
       setEditError(isUrdu ? 'بل میں کم از کم ایک پروڈکٹ ہونا ضروری ہے' : 'Invoice must have at least one product');
       return;
     }
 
-    setIsSavingEdit(true);
     setEditError(null);
 
     try {
@@ -300,10 +296,8 @@ export default function InvoicesHistoryScreen() {
       }
     } catch (err) {
       setEditError(err.message || (isUrdu ? 'ترمیم محفوظ کرنے میں خرابی ہوئی' : 'Failed to update invoice'));
-    } finally {
-      setIsSavingEdit(false);
     }
-  };
+  }, { cooldownMs: 1200 });
 
   // Live totals inside Edit Invoice Modal
   const editSubtotal = editItems.reduce((acc, it) => acc + (Number(it.unit_price) || 0) * (Number(it.quantity) || 1), 0);
@@ -682,18 +676,17 @@ export default function InvoicesHistoryScreen() {
             >
               {isUrdu ? 'منسوخ' : 'Cancel'}
             </button>
-            <button
+            <ActionButton
               type="submit"
-              disabled={isVoiding || !voidReason.trim()}
-              className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 shadow-md shadow-rose-600/20 cursor-pointer"
+              loading={isVoiding}
+              loadingText={isUrdu ? 'منسوخ ہو رہا ہے...' : 'Voiding...'}
+              disabled={!voidReason.trim()}
+              variant="danger"
+              icon={Ban}
+              className="flex-1 py-2.5 px-4 rounded-xl text-xs font-bold"
             >
-              <Ban className="w-4 h-4" />
-              <span>
-                {isVoiding
-                  ? isUrdu ? 'منسوخ ہو رہا ہے...' : 'Voiding...'
-                  : isUrdu ? '✓ تصدیق کریں اور بل منسوخ کریں' : 'Confirm & Void Bill'}
-              </span>
-            </button>
+              {isUrdu ? '✓ تصدیق کریں اور بل منسوخ کریں' : 'Confirm & Void Bill'}
+            </ActionButton>
           </div>
         </form>
       </Modal>
@@ -1036,18 +1029,17 @@ export default function InvoicesHistoryScreen() {
               >
                 {isUrdu ? 'منسوخ' : 'Cancel'}
               </button>
-              <button
+              <ActionButton
                 type="submit"
-                disabled={isSavingEdit || editItems.length === 0}
-                className="flex-2 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-blue-600/20 cursor-pointer transition-all"
+                loading={isSavingEdit}
+                loadingText={isUrdu ? 'تبدیلیاں محفوظ ہو رہی ہیں...' : 'Saving Changes...'}
+                disabled={editItems.length === 0}
+                variant="primary"
+                icon={Save}
+                className="flex-2 py-2.5 px-4 rounded-xl text-xs font-bold"
               >
-                <Save className="w-4 h-4" />
-                <span>
-                  {isSavingEdit
-                    ? isUrdu ? 'تبدیلیاں محفوظ ہو رہی ہیں...' : 'Saving Changes...'
-                    : isUrdu ? '✓ تبدیلیاں محفوظ کریں اور اسٹاک اپڈیٹ کریں' : 'Save Changes & Sync Stock'}
-                </span>
-              </button>
+                {isUrdu ? '✓ تبدیلیاں محفوظ کریں اور اسٹاک اپڈیٹ کریں' : 'Save Changes & Sync Stock'}
+              </ActionButton>
             </div>
           </form>
         )}

@@ -33,6 +33,7 @@ import {
   Edit,
   Trash2
 } from 'lucide-react';
+import ActionButton from '../components/ActionButton';
 
 export default function LedgerScreen({ initialTab = 'customers' }) {
   const { t, isUrdu } = useLanguage();
@@ -1521,15 +1522,14 @@ export default function LedgerScreen({ initialTab = 'customers' }) {
             >
               {isUrdu ? 'منسوخ' : 'Cancel'}
             </button>
-            <button
+            <ActionButton
               type="submit"
-              disabled={paymentSubmitting}
+              isSubmitting={paymentSubmitting}
+              loadingText={isUrdu ? 'اندراج ہو رہا ہے...' : 'Posting Voucher...'}
               className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-md shadow-emerald-600/20"
             >
-              {paymentSubmitting
-                ? isUrdu ? 'اندراج ہو رہا ہے...' : 'Posting Voucher...'
-                : isUrdu ? '✓ کھاتے میں واؤچر درج کریں' : '✓ Post to Ledger'}
-            </button>
+              {isUrdu ? '✓ کھاتے میں واؤچر درج کریں' : '✓ Post to Ledger'}
+            </ActionButton>
           </div>
         </form>
       </Modal>
@@ -1681,21 +1681,20 @@ export default function LedgerScreen({ initialTab = 'customers' }) {
             >
               {isUrdu ? 'منسوخ' : 'Cancel'}
             </button>
-            <button
+            <ActionButton
               type="submit"
-              disabled={partySubmitting}
+              isSubmitting={partySubmitting}
+              loadingText={isUrdu ? 'محفوظ ہو رہا ہے...' : 'Saving...'}
               className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-md shadow-emerald-600/20"
             >
-              {partySubmitting
-                ? (isUrdu ? 'محفوظ ہو رہا ہے...' : 'Saving...')
-                : editingParty
+              {editingParty
                 ? (isUrdu ? '✓ تبدیلیاں محفوظ کریں' : '✓ Save Changes')
                 : isUrdu
                 ? activeTab === 'customers'
                   ? '✓ گاہک محفوظ کریں'
                   : '✓ سپلائر محفوظ کریں'
                 : `Save & Register ${activeTab === 'customers' ? 'Customer' : 'Supplier'}`}
-            </button>
+            </ActionButton>
           </div>
         </form>
       </Modal>

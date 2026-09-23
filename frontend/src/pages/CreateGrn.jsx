@@ -8,6 +8,8 @@ import QuickProductModal from '../components/QuickProductModal';
 import SupplierForm from '../components/SupplierForm';
 import BarcodeScannerInput from '../components/BarcodeScannerInput';
 import { getCachedProducts } from '../utils/indexedDB';
+import useSubmitGuard from '../hooks/useSubmitGuard';
+import ActionButton from '../components/ActionButton';
 
 export default function CreateGrn({ onNavigateToList, editGrnId }) {
   const { t, isUrdu } = useLanguage();
@@ -237,8 +239,8 @@ export default function CreateGrn({ onNavigateToList, editGrnId }) {
     return sum + (qty * cost);
   }, 0);
 
-  const handleSubmit = async (e) => {
-    if (e) e.preventDefault();
+  const [handleSubmit, isSubmittingGuard] = useSubmitGuard(async (e) => {
+    if (e && e.preventDefault) e.preventDefault();
     setErrorMsg('');
     setSuccessMsg('');
 
@@ -268,7 +270,6 @@ export default function CreateGrn({ onNavigateToList, editGrnId }) {
       }
     }
 
-    setIsSubmitting(true);
     try {
       // 1. Auto-register any items that were typed manually without selecting an existing ID
       for (const it of validItems) {
@@ -353,10 +354,8 @@ export default function CreateGrn({ onNavigateToList, editGrnId }) {
     } catch (err) {
       console.error('Failed to save GRN:', err);
       setErrorMsg(err.message || (isUrdu ? 'GRN محفوظ کرنے میں خرابی پیش آگئی۔' : 'Failed to save GRN.'));
-    } finally {
-      setIsSubmitting(false);
     }
-  };
+  }, { cooldownMs: 1200 });
 
   return (
     <div className="flex-1 w-full h-full overflow-y-auto p-4 space-y-4 max-w-7xl mx-auto">
@@ -615,23 +614,16 @@ export default function CreateGrn({ onNavigateToList, editGrnId }) {
               </span>
             </div>
 
-            <button
+            <ActionButton
               type="submit"
-              disabled={isSubmitting || items.every(it => !it.product_id && !it.custom_product_name?.trim())}
-              className="px-6 py-2 bg-amber-500 hover:bg-amber-600 disabled:bg-slate-300 text-slate-950 font-black rounded-xl text-xs shadow-md shadow-amber-500/20 flex items-center justify-center space-x-2 transition-all cursor-pointer"
+              loading={isSubmitting || isSubmittingGuard}
+              loadingText={editGrnId ? (isUrdu ? 'تبدیلیاں محفوظ ہو رہی ہیں...' : 'Updating GRN...') : t('grn_saving_btn')}
+              disabled={items.every(it => !it.product_id && !it.custom_product_name?.trim())}
+              icon={editGrnId ? RefreshCw : CheckCircle2}
+              className="px-6 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-xl text-xs shadow-md shadow-amber-500/20"
             >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>{editGrnId ? (isUrdu ? 'تبدیلیاں محفوظ ہو رہی ہیں...' : 'Updating GRN...') : t('grn_saving_btn')}</span>
-                </>
-              ) : (
-                <>
-                  {editGrnId ? <RefreshCw className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
-                  <span>{editGrnId ? (isUrdu ? 'تبدیلیاں محفوظ کریں اور اسٹاک سنک کریں' : 'Save Changes & Sync Stock') : t('grn_submit_btn')}</span>
-                </>
-              )}
-            </button>
+              {editGrnId ? (isUrdu ? 'تبدیلیاں محفوظ کریں اور اسٹاک سنک کریں' : 'Save Changes & Sync Stock') : t('grn_submit_btn')}
+            </ActionButton>
           </div>
         </div>
       </form>

@@ -4,10 +4,13 @@ import { useAuth } from '../context/AuthContext';
 import Modal from '../components/Modal';
 import { CreditCard, Plus, Trash2, Calendar, DollarSign, Tag } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
+import { useSubmitGuard } from '../hooks/useSubmitGuard';
+import ActionButton from '../components/ActionButton';
 
 export default function ExpensesScreen() {
   const { isAdmin } = useAuth();
   const { isUrdu } = useLanguage();
+  const [isSubmittingExpense, guardExpenseSubmit] = useSubmitGuard(1200);
   const [expenses, setExpenses] = useState([]);
   const [totalExpenses, setTotalExpenses] = useState(0);
   const [categoryFilter, setCategoryFilter] = useState('');
@@ -36,7 +39,7 @@ export default function ExpensesScreen() {
     }
   };
 
-  const handleAddExpense = async (e) => {
+  const handleAddExpense = guardExpenseSubmit(async (e) => {
     e.preventDefault();
     if (!formData.amount) return;
 
@@ -54,7 +57,7 @@ export default function ExpensesScreen() {
     } catch (err) {
       alert(err.message || (isUrdu ? 'خرچہ درج کرنے میں مسئلہ پیش آیا' : 'Failed to record expense'));
     }
-  };
+  });
 
   const handleDeleteExpense = async (id) => {
     if (!window.confirm(isUrdu ? 'کیا آپ واقعی اس خرچے کا ریکارڈ ختم کرنا چاہتے ہیں؟' : 'Delete this expense record?')) return;
@@ -274,12 +277,14 @@ export default function ExpensesScreen() {
             >
               {isUrdu ? 'منسوخ' : 'Cancel'}
             </button>
-            <button
+            <ActionButton
               type="submit"
+              isSubmitting={isSubmittingExpense}
+              loadingText={isUrdu ? 'محفوظ ہو رہا ہے...' : 'Saving...'}
               className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-md shadow-emerald-600/20"
             >
               {isUrdu ? '✓ خرچہ محفوظ کریں' : 'Save Expense'}
-            </button>
+            </ActionButton>
           </div>
         </form>
       </Modal>

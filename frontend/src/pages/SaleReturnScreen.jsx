@@ -24,6 +24,8 @@ import {
   Building2,
   Wallet
 } from 'lucide-react';
+import useSubmitGuard from '../hooks/useSubmitGuard';
+import ActionButton from '../components/ActionButton';
 
 export default function SaleReturnScreen() {
   const { isUrdu } = useLanguage();
@@ -49,7 +51,6 @@ export default function SaleReturnScreen() {
   const [productsList, setProductsList] = useState([]);
   const [customersList, setCustomersList] = useState([]);
   
-  const [submitting, setSubmitting] = useState(false);
   const [successModal, setSuccessModal] = useState(null);
   const [errorMsg, setErrorMsg] = useState('');
   
@@ -313,7 +314,7 @@ export default function SaleReturnScreen() {
     return returnItems.reduce((sum, item) => sum + (Number(item.quantity || 0) * Number(item.unit_price || 0)), 0);
   };
 
-  const handleSubmitReturn = async () => {
+  const [handleSubmitReturn, submitting] = useSubmitGuard(async () => {
     if (returnItems.length === 0) {
       setErrorMsg(isUrdu ? 'براہ کرم واپسی کے لیے کم از کم ایک چیز منتخب کریں۔' : 'Please select at least one item to return.');
       return;
@@ -329,7 +330,6 @@ export default function SaleReturnScreen() {
       return;
     }
 
-    setSubmitting(true);
     setErrorMsg('');
 
     try {
@@ -378,10 +378,8 @@ export default function SaleReturnScreen() {
       }
     } catch (err) {
       setErrorMsg(err.message || 'Sale return failed');
-    } finally {
-      setSubmitting(false);
     }
-  };
+  }, { cooldownMs: 1200 });
 
   return (
     <div className="h-full flex flex-col bg-slate-50 overflow-hidden text-slate-800">
@@ -851,21 +849,16 @@ export default function SaleReturnScreen() {
                   </span>
                 </div>
 
-                <button
+                <ActionButton
                   type="button"
-                  disabled={submitting}
+                  loading={submitting}
+                  loadingText={isUrdu ? 'واپسی پروسیس ہو رہی ہے...' : 'Processing Return...'}
                   onClick={handleSubmitReturn}
-                  className="px-8 py-3 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-xl text-xs flex items-center gap-2 cursor-pointer shadow-sm shadow-amber-500/20 transition-all"
+                  icon={RotateCcw}
+                  className="px-8 py-3 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black rounded-xl text-xs shadow-sm shadow-amber-500/20"
                 >
-                  {submitting ? (
-                    <div className="w-4 h-4 border-2 border-slate-950 border-t-transparent rounded-full animate-spin"></div>
-                  ) : (
-                    <>
-                      <RotateCcw className="w-4 h-4" />
-                      <span>{isUrdu ? 'سیل واپسی مکمل کریں (Confirm Return)' : 'Confirm Return'}</span>
-                    </>
-                  )}
-                </button>
+                  {isUrdu ? 'سیل واپسی مکمل کریں (Confirm Return)' : 'Confirm Return'}
+                </ActionButton>
               </div>
             )}
           </div>

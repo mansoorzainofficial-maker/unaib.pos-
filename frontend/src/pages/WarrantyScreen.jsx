@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import Modal from '../components/Modal';
 import { useLanguage } from '../context/LanguageContext';
+import { useSubmitGuard } from '../hooks/useSubmitGuard';
+import ActionButton from '../components/ActionButton';
 import {
   ShieldAlert,
   ShieldCheck,
@@ -19,6 +21,8 @@ import {
 
 export default function WarrantyScreen() {
   const { isUrdu } = useLanguage();
+  const [isCreatingClaim, guardCreateClaim] = useSubmitGuard(1200);
+  const [isUpdatingClaim, guardUpdateClaim] = useSubmitGuard(1200);
   const [activeTab, setActiveTab] = useState('lookup'); // 'lookup', 'claims', 'serials'
 
   // Serial Lookup state
@@ -90,7 +94,7 @@ export default function WarrantyScreen() {
     }
   };
 
-  const handleCreateClaim = async (e) => {
+  const handleCreateClaim = guardCreateClaim(async (e) => {
     e.preventDefault();
     if (!searchedSerial || !claimIssue) return;
 
@@ -111,9 +115,9 @@ export default function WarrantyScreen() {
     } catch (err) {
       alert(err.message || 'Failed to create claim');
     }
-  };
+  });
 
-  const handleUpdateClaimStatus = async (e) => {
+  const handleUpdateClaimStatus = guardUpdateClaim(async (e) => {
     e.preventDefault();
     if (!editingClaim) return;
 
@@ -129,7 +133,7 @@ export default function WarrantyScreen() {
     } catch (err) {
       alert(err.message || 'Failed to update claim');
     }
-  };
+  });
 
   return (
     <div className="flex-1 flex flex-col h-full min-h-0 overflow-hidden bg-slate-100 text-slate-800 p-4 space-y-4 select-text">
@@ -541,12 +545,14 @@ export default function WarrantyScreen() {
             >
               {isUrdu ? 'منسوخ' : 'Cancel'}
             </button>
-            <button
+            <ActionButton
               type="submit"
+              isSubmitting={isCreatingClaim}
+              loadingText={isUrdu ? 'کلیم درج ہو رہا ہے...' : 'Submitting...'}
               className="flex-1 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-xs font-bold shadow-md shadow-amber-600/20 cursor-pointer"
             >
               {isUrdu ? 'کلیم درج کریں' : 'Submit RMA Claim'}
-            </button>
+            </ActionButton>
           </div>
         </form>
       </Modal>
@@ -597,12 +603,14 @@ export default function WarrantyScreen() {
             >
               {isUrdu ? 'منسوخ' : 'Cancel'}
             </button>
-            <button
+            <ActionButton
               type="submit"
+              isSubmitting={isUpdatingClaim}
+              loadingText={isUrdu ? 'محفوظ ہو رہا ہے...' : 'Saving...'}
               className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-md shadow-emerald-600/20 cursor-pointer"
             >
               {isUrdu ? 'محفوظ کریں' : 'Save Status'}
-            </button>
+            </ActionButton>
           </div>
         </form>
       </Modal>

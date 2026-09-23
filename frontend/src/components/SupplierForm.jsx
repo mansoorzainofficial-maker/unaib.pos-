@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { X, CheckCircle2, Loader2, Building, User, Phone, Mail, MapPin, Wallet } from 'lucide-react';
 import { supplierApi } from '../services/supplierApi';
 import { useLanguage } from '../context/LanguageContext';
+import { useSubmitGuard } from '../hooks/useSubmitGuard';
+import ActionButton from './ActionButton';
 
 export default function SupplierForm({
   isOpen,
@@ -10,6 +12,7 @@ export default function SupplierForm({
   onSuccess
 }) {
   const { t, isUrdu } = useLanguage();
+  const [isGuarded, guardSubmit] = useSubmitGuard(1200);
   const [formData, setFormData] = useState({
     name: '',
     contact_person: '',
@@ -46,7 +49,7 @@ export default function SupplierForm({
 
   if (!isOpen) return null;
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = guardSubmit(async (e) => {
     e.preventDefault();
     setErrorMsg('');
 
@@ -70,7 +73,7 @@ export default function SupplierForm({
     } finally {
       setIsSubmitting(false);
     }
-  };
+  });
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
@@ -200,29 +203,21 @@ export default function SupplierForm({
           <div className="flex items-center space-x-2 pt-2 border-t border-slate-100">
             <button
               type="button"
-              disabled={isSubmitting}
+              disabled={isGuarded || isSubmitting}
               onClick={onClose}
               className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors cursor-pointer"
             >
               {t('supplier_btn_cancel')}
             </button>
-            <button
+            <ActionButton
               type="submit"
-              disabled={isSubmitting}
+              isSubmitting={isGuarded || isSubmitting}
+              loadingText={t('supplier_saving')}
               className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-bold rounded-xl shadow-md shadow-blue-600/20 flex items-center justify-center space-x-1.5 transition-all cursor-pointer"
             >
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>{t('supplier_saving')}</span>
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>{supplier ? t('supplier_btn_save_edit') : t('supplier_btn_save_new')}</span>
-                </>
-              )}
-            </button>
+              <CheckCircle2 className="w-4 h-4" />
+              <span>{supplier ? t('supplier_btn_save_edit') : t('supplier_btn_save_new')}</span>
+            </ActionButton>
           </div>
         </form>
       </div>

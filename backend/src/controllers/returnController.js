@@ -76,6 +76,32 @@ async function createSaleReturn(req, res) {
         });
       }
 
+      // STRICT VALIDATION: If returning against a specific invoice, verify it hasn't already been fully refunded
+      if (invoice_id) {
+        const inv = await txGet('SELECT id, invoice_number, grand_total, status FROM invoices WHERE id = ?', [invoice_id]);
+        if (!inv) {
+          throw new Error('بل ریکارڈ میں موجود نہیں ہے (Invoice not found)');
+        }
+        if (inv.status === 'voided') {
+          throw new Error('یہ بل منسوخ (Voided) ہو چکا ہے، اس پر واپسی ممکن نہیں');
+        }
+
+        const refundCheck = await txGet(
+          'SELECT COALESCE(SUM(total_refund_amount), 0) as total_refunded FROM sales_returns WHERE invoice_id = ?',
+          [invoice_id]
+        );
+        const alreadyRefunded = Number(refundCheck?.total_refunded) || 0;
+        const invoiceGrandTotal = Number(inv.grand_total) || 0;
+
+        if (alreadyRefunded >= invoiceGrandTotal) {
+          throw new Error(`یہ بل پہلے ہی مکمل واپس ہو چکا ہے (Invoice is already fully refunded: Rs. ${alreadyRefunded})`);
+        }
+
+        if (alreadyRefunded + totalRefund > invoiceGrandTotal + 0.01) {
+          throw new Error(`واپسی کی رقم (Rs. ${totalRefund}) بل کی باقی رقم (Rs. ${invoiceGrandTotal - alreadyRefunded}) سے زیادہ نہیں ہو سکتی`);
+        }
+      }
+
       // Resolve customer if customer_id not explicitly provided
       let resolvedCustomerId = customer_id ? Number(customer_id) : null;
       let resolvedCustomerName = customer_name ? customer_name.trim() : '';

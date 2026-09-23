@@ -3,9 +3,13 @@ import { api } from '../services/api';
 import Modal from '../components/Modal';
 import { Landmark, DollarSign, ArrowUpRight, ArrowDownRight, AlertCircle, CheckCircle } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
+import { useSubmitGuard } from '../hooks/useSubmitGuard';
+import ActionButton from '../components/ActionButton';
 
 export default function CashDrawerModal({ isOpen, onClose }) {
   const { isUrdu } = useLanguage();
+  const [isOpenGuard, guardOpenShift] = useSubmitGuard(1200);
+  const [isCloseGuard, guardCloseShift] = useSubmitGuard(1200);
   const [shiftData, setShiftData] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -43,7 +47,7 @@ export default function CashDrawerModal({ isOpen, onClose }) {
     }
   };
 
-  const handleOpenShift = async (e) => {
+  const handleOpenShift = guardOpenShift(async (e) => {
     e.preventDefault();
     try {
       await api.drawer.openShift({
@@ -54,9 +58,9 @@ export default function CashDrawerModal({ isOpen, onClose }) {
     } catch (err) {
       alert(err.message || (isUrdu ? 'شفٹ شروع کرنے میں مسئلہ پیش آیا' : 'Failed to open shift'));
     }
-  };
+  });
 
-  const handleCloseShift = async (e) => {
+  const handleCloseShift = guardCloseShift(async (e) => {
     e.preventDefault();
     if (actualCash === '' || isNaN(actualCash)) {
       alert(isUrdu ? 'براہ کرم گلے میں گنی گئی اصل رقم درج کریں' : 'Please enter actual physical cash counted');
@@ -75,7 +79,7 @@ export default function CashDrawerModal({ isOpen, onClose }) {
     } catch (err) {
       alert(err.message || (isUrdu ? 'شفٹ بند کرنے میں مسئلہ پیش آیا' : 'Failed to close shift'));
     }
-  };
+  });
 
   const loadHistory = async () => {
     try {
@@ -238,12 +242,14 @@ export default function CashDrawerModal({ isOpen, onClose }) {
                 />
               </div>
 
-              <button
+              <ActionButton
                 type="submit"
+                isSubmitting={isCloseGuard}
+                loadingText={isUrdu ? 'شفٹ بند ہو رہی ہے...' : 'Closing Shift...'}
                 className="w-full py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold shadow-md transition-colors"
               >
                 {isUrdu ? 'حساب ملا کر شفٹ بند کریں' : 'Reconcile & End Shift'}
-              </button>
+              </ActionButton>
             </form>
           </div>
         )}
@@ -286,12 +292,14 @@ export default function CashDrawerModal({ isOpen, onClose }) {
               />
             </div>
 
-            <button
+            <ActionButton
               type="submit"
+              isSubmitting={isOpenGuard}
+              loadingText={isUrdu ? 'شفٹ شروع ہو رہی ہے...' : 'Starting Shift...'}
               className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-md transition-colors"
             >
               {isUrdu ? 'شفٹ شروع کریں اور گلہ کھولیں' : 'Start Shift / Open Drawer'}
-            </button>
+            </ActionButton>
           </form>
         )}
 

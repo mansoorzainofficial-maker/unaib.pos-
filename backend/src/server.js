@@ -45,6 +45,10 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
+// System-wide Idempotency & Double-Click / Rapid-Tap Concurrency Protection
+const { idempotencyMiddleware } = require('./middleware/idempotency');
+app.use('/api', idempotencyMiddleware);
+
 // Database initialization promise
 let initDbPromise = null;
 let isDbReady = false;

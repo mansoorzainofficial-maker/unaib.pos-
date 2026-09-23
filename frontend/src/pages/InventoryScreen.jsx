@@ -3,6 +3,8 @@ import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import Modal from '../components/Modal';
 import { useLanguage } from '../context/LanguageContext';
+import { useSubmitGuard } from '../hooks/useSubmitGuard';
+import ActionButton from '../components/ActionButton';
 import {
   Package,
   Plus,
@@ -26,6 +28,8 @@ import {
 export default function InventoryScreen({ onLowStockChange }) {
   const { isAdmin } = useAuth();
   const { isUrdu } = useLanguage();
+  const [isSavingProduct, guardSaveProduct] = useSubmitGuard(1200);
+  const [isAddingSerials, guardAddSerials] = useSubmitGuard(1200);
 
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -151,7 +155,7 @@ export default function InventoryScreen({ onLowStockChange }) {
     setIsEditModalOpen(true);
   };
 
-  const handleSaveProduct = async (e) => {
+  const handleSaveProduct = guardSaveProduct(async (e) => {
     e.preventDefault();
     setErrorMsg('');
 
@@ -179,7 +183,7 @@ export default function InventoryScreen({ onLowStockChange }) {
     } catch (err) {
       setErrorMsg(err.message || 'Operation failed');
     }
-  };
+  });
 
   const handleDeleteProduct = async (id, name) => {
     if (!window.confirm(`Are you sure you want to delete "${name}"? This action cannot be undone.`)) {
@@ -194,7 +198,7 @@ export default function InventoryScreen({ onLowStockChange }) {
     }
   };
 
-  const handleAddSerialsSubmit = async (e) => {
+  const handleAddSerialsSubmit = guardAddSerials(async (e) => {
     e.preventDefault();
     if (!targetProductForSerials) return;
 
@@ -218,7 +222,7 @@ export default function InventoryScreen({ onLowStockChange }) {
     } catch (err) {
       setErrorMsg(err.message || 'Failed to add serial numbers');
     }
-  };
+  });
 
   const handleSyncSerials = async (productId) => {
     try {
@@ -1001,12 +1005,14 @@ export default function InventoryScreen({ onLowStockChange }) {
             >
               {isUrdu ? 'منسوخ' : 'Cancel'}
             </button>
-            <button
+            <ActionButton
               type="submit"
+              isSubmitting={isSavingProduct}
+              loadingText={isUrdu ? 'محفوظ ہو رہا ہے...' : 'Saving...'}
               className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-sm cursor-pointer transition-colors"
             >
               {editingProduct ? (isUrdu ? 'تبدیلیاں محفوظ کریں' : 'Save Changes') : (isUrdu ? 'سامان محفوظ کریں' : 'Create Product')}
-            </button>
+            </ActionButton>
           </div>
         </form>
       </Modal>
@@ -1042,12 +1048,14 @@ export default function InventoryScreen({ onLowStockChange }) {
             >
               {isUrdu ? 'منسوخ' : 'Cancel'}
             </button>
-            <button
+            <ActionButton
               type="submit"
+              isSubmitting={isAddingSerials}
+              loadingText={isUrdu ? 'رجسٹر ہو رہے ہیں...' : 'Registering...'}
               className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-sm cursor-pointer transition-colors"
             >
               {isUrdu ? 'سیریل نمبرز رجسٹر کریں' : 'Register Serial Numbers'}
-            </button>
+            </ActionButton>
           </div>
         </form>
       </Modal>
