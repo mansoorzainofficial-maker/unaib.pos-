@@ -1,6 +1,8 @@
-const API_BASE = (typeof window !== 'undefined' && window.location.protocol.startsWith('http'))
-  ? '/api/ledger'
-  : 'http://localhost:5001/api/ledger';
+const API_BASE = (import.meta.env?.VITE_API_URL)
+  ? `${import.meta.env.VITE_API_URL.replace(/\/+$/, '')}/ledger`
+  : (typeof window !== 'undefined' && window.location.protocol.startsWith('http'))
+    ? '/api/ledger'
+    : 'http://localhost:5001/api/ledger';
 
 function getHeaders() {
   const token = typeof localStorage !== 'undefined' ? localStorage.getItem('unaib_token') : null;

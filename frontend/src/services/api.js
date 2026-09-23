@@ -1,8 +1,10 @@
 const CLOUD_API_FALLBACK = 'https://unaib-pos-v1.vercel.app/api';
 
-const PRIMARY_API_BASE = (typeof window !== 'undefined' && window.location.protocol.startsWith('http'))
-  ? (window.location.origin.includes('vercel.app') ? '/api' : (window.location.origin.replace(/\/+$/, '') + '/api'))
-  : 'http://localhost:5001/api';
+export const PRIMARY_API_BASE = (import.meta.env?.VITE_API_URL)
+  ? import.meta.env.VITE_API_URL.replace(/\/+$/, '')
+  : (typeof window !== 'undefined' && window.location.protocol.startsWith('http'))
+    ? '/api'
+    : 'http://localhost:5001/api';
 
 let activeApiBase = PRIMARY_API_BASE;
 

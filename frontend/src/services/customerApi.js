@@ -1,8 +1,10 @@
 import { api } from './api';
 
-const API_BASE = (typeof window !== 'undefined' && window.location.protocol.startsWith('http'))
-  ? '/api/customers'
-  : 'http://localhost:5001/api/customers';
+const API_BASE = (import.meta.env?.VITE_API_URL)
+  ? `${import.meta.env.VITE_API_URL.replace(/\/+$/, '')}/customers`
+  : (typeof window !== 'undefined' && window.location.protocol.startsWith('http'))
+    ? '/api/customers'
+    : 'http://localhost:5001/api/customers';
 
 function getHeaders() {
   const token = typeof localStorage !== 'undefined' ? localStorage.getItem('unaib_token') : null;
