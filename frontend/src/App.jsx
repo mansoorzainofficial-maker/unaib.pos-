@@ -61,6 +61,33 @@ export default function App() {
     };
   }, [isAdmin]);
 
+  // Security & Back-Button Protection: Prevent back-navigation into protected state after logout
+  useEffect(() => {
+    const handlePopState = () => {
+      const token = localStorage.getItem('unaib_token');
+      if (!token) {
+        window.history.pushState(null, '', window.location.pathname);
+      }
+    };
+
+    const handlePageShow = (e) => {
+      const token = localStorage.getItem('unaib_token');
+      if (!token && user) {
+        window.location.reload();
+      } else if (e.persisted && !token) {
+        window.location.reload();
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    window.addEventListener('pageshow', handlePageShow);
+
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('pageshow', handlePageShow);
+    };
+  }, [user]);
+
   if (loading) {
     return (
       <div className="h-screen w-screen bg-slate-100 flex items-center justify-center text-slate-600">

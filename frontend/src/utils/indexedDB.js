@@ -68,57 +68,25 @@ export function openDB() {
 // PRODUCTS CACHE LOGIC
 // -------------------------------------------------------------
 
-/**
- * Save / Update all products in IndexedDB cache
- * @param {Array} productsList
- * @returns {Promise<boolean>}
- */
-export async function saveProductsCache(productsList) {
-  if (!Array.isArray(productsList) || productsList.length === 0) return false;
-
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_PRODUCTS, 'readwrite');
-    const store = tx.objectStore(STORE_PRODUCTS);
-
-    // Clear old catalog to ensure deleted or renamed items do not linger
-    store.clear();
-
-    for (const prod of productsList) {
-      store.put(prod);
-    }
-
-    tx.oncomplete = () => {
-      resolve(true);
-    };
-
-    tx.onerror = (event) => {
-      console.error('Failed to save products to IndexedDB:', event.target.error);
-      reject(event.target.error);
-    };
-  });
+// Immediate wipe of any lingering offline database on browser disk
+if (typeof window !== 'undefined' && window.indexedDB) {
+  try {
+    window.indexedDB.deleteDatabase(DB_NAME);
+  } catch (_) {}
 }
 
 /**
- * Retrieve all cached products from IndexedDB
- * @returns {Promise<Array>}
+ * Save / Update all products in IndexedDB cache (Disabled for Zero-Persistence Security)
+ */
+export async function saveProductsCache() {
+  return false;
+}
+
+/**
+ * Retrieve all cached products from IndexedDB (Disabled for Zero-Persistence Security)
  */
 export async function getCachedProducts() {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE_PRODUCTS, 'readonly');
-    const store = tx.objectStore(STORE_PRODUCTS);
-    const request = store.getAll();
-
-    request.onsuccess = () => {
-      resolve(request.result || []);
-    };
-
-    request.onerror = (event) => {
-      console.error('Failed to read products from IndexedDB:', event.target.error);
-      reject(event.target.error);
-    };
-  });
+  return [];
 }
 
 // -------------------------------------------------------------

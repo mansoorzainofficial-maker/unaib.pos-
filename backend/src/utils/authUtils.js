@@ -26,9 +26,9 @@ function verifyPassword(password, stored) {
 }
 
 /**
- * Generate standard HMAC-SHA256 JWT token
+ * Generate standard HMAC-SHA256 JWT token (Default: 10 Hours / 36,000 seconds)
  */
-function signToken(payload, expiresInSec = 86400 * 7) { // 7 days
+function signToken(payload, expiresInSec = 3600 * 10) { // 10 hours
   const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
   const exp = Math.floor(Date.now() / 1000) + expiresInSec;
   const body = Buffer.from(JSON.stringify({ ...payload, exp })).toString('base64url');

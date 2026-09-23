@@ -37,43 +37,12 @@ export default function POSScreen({ onLowStockChange }) {
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [categories, setCategories] = useState([]);
 
-  const DRAFT_STORAGE_KEY = 'unaib_pos_active_draft_bill';
-
-  // Active Sale Cart with power-outage auto-recovery
-  const [cart, setCart] = useState(() => {
-    try {
-      const saved = localStorage.getItem(DRAFT_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed.cart) && parsed.cart.length > 0) return parsed.cart;
-      }
-    } catch (_) {}
-    return [];
-  });
-  const [customerMode, setCustomerMode] = useState(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(DRAFT_STORAGE_KEY) || '{}');
-      return saved.customerMode || 'walkin';
-    } catch (_) { return 'walkin'; }
-  });
-  const [customerName, setCustomerName] = useState(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(DRAFT_STORAGE_KEY) || '{}');
-      return saved.customerName || '';
-    } catch (_) { return ''; }
-  });
-  const [customerPhone, setCustomerPhone] = useState(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(DRAFT_STORAGE_KEY) || '{}');
-      return saved.customerPhone || '';
-    } catch (_) { return ''; }
-  });
-  const [selectedCustomerId, setSelectedCustomerId] = useState(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(DRAFT_STORAGE_KEY) || '{}');
-      return saved.selectedCustomerId || null;
-    } catch (_) { return null; }
-  });
+  // Active Sale Cart (In-memory React state only - zero browser disk persistence)
+  const [cart, setCart] = useState([]);
+  const [customerMode, setCustomerMode] = useState('walkin');
+  const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [selectedCustomerId, setSelectedCustomerId] = useState(null);
   const [customers, setCustomers] = useState([]);
   const [showCustomerList, setShowCustomerList] = useState(false);
   const [showWalkinDetails, setShowWalkinDetails] = useState(false);
@@ -98,47 +67,18 @@ export default function POSScreen({ onLowStockChange }) {
     setTimeout(() => setSuccessMsg(''), 4000);
   };
 
-  // Discount & Payment
+  // Discount & Payment (Pure React state)
   const [discountType, setDiscountType] = useState('amount'); // 'amount' or 'percentage'
-  const [discountValue, setDiscountValue] = useState(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(DRAFT_STORAGE_KEY) || '{}');
-      return saved.discountValue || 0;
-    } catch (_) { return 0; }
-  });
+  const [discountValue, setDiscountValue] = useState(0);
   const [taxRate, setTaxRate] = useState(0); // e.g. 0% or custom
   const [defaultTaxRate, setDefaultTaxRate] = useState(0);
-  const [shippingCost, setShippingCost] = useState(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(DRAFT_STORAGE_KEY) || '{}');
-      return saved.shippingCost || 0;
-    } catch (_) { return 0; }
-  });
-  const [shippingNotes, setShippingNotes] = useState(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(DRAFT_STORAGE_KEY) || '{}');
-      return saved.shippingNotes || '';
-    } catch (_) { return ''; }
-  });
-  const [extraCharges, setExtraCharges] = useState(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(DRAFT_STORAGE_KEY) || '{}');
-      return saved.extraCharges || 0;
-    } catch (_) { return 0; }
-  });
+  const [shippingCost, setShippingCost] = useState(0);
+  const [shippingNotes, setShippingNotes] = useState('');
+  const [extraCharges, setExtraCharges] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState('cash'); // 'cash', 'card', 'online'
   const [tenderedCash, setTenderedCash] = useState('');
   const [notes, setNotes] = useState('');
-  const [recoveredNotice, setRecoveredNotice] = useState(() => {
-    try {
-      const saved = localStorage.getItem(DRAFT_STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        return Array.isArray(parsed.cart) && parsed.cart.length > 0;
-      }
-    } catch (_) {}
-    return false;
-  });
+  const [recoveredNotice, setRecoveredNotice] = useState(false);
 
   // Modals & States
   const [serialModalItem, setSerialModalItem] = useState(null); // Item currently configuring serial numbers
@@ -209,30 +149,25 @@ export default function POSScreen({ onLowStockChange }) {
     }
   };
 
-  // Real-time Auto-Save active bill draft to localStorage (Safe from sudden power cuts / crash)
+  // Purge any residual draft key from browser storage on mount
   useEffect(() => {
     try {
+      localStorage.removeItem('unaib_pos_active_draft_bill');
+    } catch (_) {}
+  }, []);
+
+  // Prevent accidental page reload or tab closure when active cart has items
+  useEffect(() => {
+    const handleBeforeUnload = (e) => {
       if (cart.length > 0) {
-        const draft = {
-          cart,
-          customerMode,
-          customerName,
-          customerPhone,
-          selectedCustomerId,
-          discountValue,
-          shippingCost,
-          shippingNotes,
-          extraCharges,
-          savedAt: new Date().toISOString()
-        };
-        localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(draft));
-      } else {
-        localStorage.removeItem(DRAFT_STORAGE_KEY);
+        e.preventDefault();
+        e.returnValue = '';
+        return '';
       }
-    } catch (e) {
-      console.warn('Could not auto-save draft bill to localStorage:', e);
-    }
-  }, [cart, customerMode, customerName, customerPhone, selectedCustomerId, discountValue, shippingCost, shippingNotes, extraCharges]);
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [cart]);
 
   // Barcode / Manual Input Handler (Scanner or Manual Typing)
   const handleBarcodeScan = async (barcode) => {
@@ -445,9 +380,6 @@ export default function POSScreen({ onLowStockChange }) {
     setNotes('');
     setErrorMsg('');
     setRecoveredNotice(false);
-    try {
-      localStorage.removeItem(DRAFT_STORAGE_KEY);
-    } catch (_) {}
   };
 
   // Calculations
