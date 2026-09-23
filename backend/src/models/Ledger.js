@@ -315,19 +315,6 @@ class Ledger {
       });
     } catch (_) {}
 
-    // Enqueue cloud syncs
-    try {
-      const syncService = require('../services/syncService');
-      syncService.enqueueSync('ledger_entries', entryId, 'delete');
-      if (partyId) {
-        const targetTable = (partyType === 'supplier') ? 'suppliers' : 'customers';
-        syncService.enqueueSync(targetTable, partyId, 'update');
-      }
-      if (accountId) {
-        syncService.enqueueSync('accounts', accountId, 'update');
-      }
-    } catch (_) {}
-
     // Return updated statement
     const isClient = (partyType === 'client' || partyType === 'customer');
     const normPartyType = isClient ? 'client' : 'supplier';

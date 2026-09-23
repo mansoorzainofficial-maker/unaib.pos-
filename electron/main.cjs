@@ -206,16 +206,6 @@ app.whenReady().then(async () => {
   });
 });
 
-app.on('before-quit', () => {
-  try {
-    console.log('[Electron] Application shutting down. Triggering exit backup...');
-    const backupService = require('../backend/src/services/backupService');
-    backupService.createBackup('app_exit');
-  } catch (err) {
-    console.error('[Electron] Exit backup error:', err.message);
-  }
-});
-
 app.on('window-all-closed', () => {
   if (serverInstance && typeof serverInstance.close === 'function') {
     try {

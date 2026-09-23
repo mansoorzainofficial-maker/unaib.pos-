@@ -1,18 +1,36 @@
 const express = require('express');
 const router = express.Router();
-const syncService = require('../services/syncService');
+const { pingDb } = require('../config/db');
 
 /**
  * GET /api/sync/status
- * Returns current sync status, pending count, online state, latency, and last sync timestamp
+ * In 100% Supabase mode: all database operations are real-time.
+ * Keeps React frontend navbar status indicator green ("✓ Synced").
  */
 router.get('/status', async (req, res) => {
   try {
-    const status = await syncService.getSyncStatus();
-    return res.json(status);
+    const health = await pingDb();
+    return res.json({
+      success: true,
+      isOnline: true,
+      isSyncing: false,
+      pendingCount: 0,
+      failedCount: 0,
+      lastSyncTime: new Date().toISOString(),
+      cloudConfigured: true,
+      database: 'postgresql (supabase)',
+      latencyMs: health.latencyMs
+    });
   } catch (err) {
-    return res.status(500).json({
+    return res.json({
       success: false,
+      isOnline: false,
+      isSyncing: false,
+      pendingCount: 0,
+      failedCount: 0,
+      lastSyncTime: null,
+      cloudConfigured: true,
+      database: 'postgresql (supabase)',
       error: err.message
     });
   }
@@ -20,22 +38,16 @@ router.get('/status', async (req, res) => {
 
 /**
  * POST /api/sync/trigger
- * Manually trigger immediate background sync
+ * Direct cloud mode: all writes are real-time, zero queue needed.
  */
 router.post('/trigger', async (req, res) => {
-  try {
-    // Process queue in background and return immediate progress result
-    const result = await syncService.processQueue();
-    return res.json({
-      success: true,
-      result
-    });
-  } catch (err) {
-    return res.status(500).json({
-      success: false,
-      error: err.message
-    });
-  }
+  return res.json({
+    success: true,
+    result: {
+      syncedCount: 0,
+      message: 'Direct Supabase cloud mode active - all transactions write in real-time.'
+    }
+  });
 });
 
 module.exports = router;

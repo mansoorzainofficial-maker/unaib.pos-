@@ -61,6 +61,7 @@
   },
   "dependencies": {
     "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
     "express": "^4.19.2",
     "express-rate-limit": "^8.7.0",
     "lucide-react": "^0.475.0",

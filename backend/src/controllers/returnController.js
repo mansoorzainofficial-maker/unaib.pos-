@@ -1,5 +1,4 @@
 const { query, get, run, transaction } = require('../config/db');
-const syncService = require('../services/syncService');
 
 async function generateSaleReturnNumber(dbGet = get) {
   const now = new Date();
@@ -217,16 +216,6 @@ async function createSaleReturn(req, res) {
       return { returnId, returnNumber, totalRefund, customerId: resolvedCustomerId };
     });
 
-    try {
-      syncService.enqueueSync('sales_returns', result.returnId, 'insert');
-      const syncCustId = result.customerId || (customer_id ? Number(customer_id) : null);
-      if (syncCustId) {
-        syncService.enqueueSync('customers', syncCustId, 'update');
-      }
-    } catch (syncErr) {
-      console.warn('Non-blocking sync enqueue error:', syncErr);
-    }
-
     res.status(201).json({
       success: true,
       message: 'Sale return processed successfully',
@@ -376,15 +365,6 @@ async function createPurchaseReturn(req, res) {
 
       return { returnId, returnNumber, totalAmount };
     });
-
-    try {
-      syncService.enqueueSync('purchase_returns', result.returnId, 'insert');
-      if (supplier_id) {
-        syncService.enqueueSync('suppliers', supplier_id, 'update');
-      }
-    } catch (syncErr) {
-      console.warn('Non-blocking sync enqueue error:', syncErr);
-    }
 
     res.status(201).json({
       success: true,

@@ -24,8 +24,6 @@ const accountRoutes = require('./routes/accountRoutes');
 const activityLogRoutes = require('./routes/activityLogRoutes');
 const dashboardRoutes = require('./routes/dashboardRoutes');
 const syncRoutes = require('./routes/syncRoutes');
-const backupService = require('./services/backupService');
-const syncService = require('./services/syncService');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
@@ -56,12 +54,7 @@ function ensureDbInit() {
   if (!initDbPromise) {
     initDbPromise = initDb().then(() => {
       isDbReady = true;
-      console.log(`Database (${isPostgres ? 'PostgreSQL' : 'SQLite'}) initialized successfully.`);
-      if (!isPostgres) {
-        backupService.createBackup('startup');
-        backupService.startDailyScheduler();
-        syncService.startSyncScheduler(30000);
-      }
+      console.log('Database (PostgreSQL - Supabase) initialized successfully.');
     }).catch(err => {
       console.error('Failed to initialize database:', err);
       initDbPromise = null;
@@ -95,13 +88,13 @@ app.use(async (req, res, next) => {
 
 // Comprehensive Health check endpoint with live database ping & latency verification
 app.get('/api/health', async (req, res) => {
-  const { isPostgres, pingDb, CURRENT_SCHEMA_VERSION } = require('./config/db');
+  const { pingDb, CURRENT_SCHEMA_VERSION } = require('./config/db');
   try {
     const dbHealth = await pingDb();
     res.json({
       status: 'ok',
       service: 'Unaib Computer Accessories POS API',
-      database: isPostgres ? 'postgresql (supabase)' : 'sqlite (local)',
+      database: 'postgresql (supabase)',
       db_status: 'connected',
       db_latency_ms: dbHealth.latencyMs,
       schema_version: CURRENT_SCHEMA_VERSION,
@@ -111,7 +104,7 @@ app.get('/api/health', async (req, res) => {
     res.status(503).json({
       status: 'degraded',
       service: 'Unaib Computer Accessories POS API',
-      database: isPostgres ? 'postgresql (supabase)' : 'sqlite (local)',
+      database: 'postgresql (supabase)',
       db_status: 'disconnected',
       error: err.message,
       timestamp: new Date().toISOString()
@@ -165,14 +158,6 @@ let isShuttingDown = false;
 function handleGracefulExit(signal) {
   if (isShuttingDown) return;
   isShuttingDown = true;
-  if (!isPostgres) {
-    console.log(`[Server] Received ${signal}. Taking safe shutdown backup...`);
-    try {
-      backupService.createBackup('shutdown');
-    } catch (e) {
-      console.error('[Server] Shutdown backup failed:', e.message);
-    }
-  }
   process.exit(0);
 }
 

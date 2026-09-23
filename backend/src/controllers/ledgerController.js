@@ -1,6 +1,5 @@
 const Ledger = require('../models/Ledger');
 const Account = require('../models/Account');
-const syncService = require('../services/syncService');
 
 /**
  * Get all available payment accounts (Cash Counter, Bank Accounts)
@@ -131,16 +130,6 @@ async function recordPayment(req, res) {
       entry_date: paymentDate,
       notes: notes ? notes.trim() : null
     });
-
-    if (updatedStatement && updatedStatement.new_entry_id) {
-      try {
-        syncService.enqueueSync('ledger_entries', updatedStatement.new_entry_id, 'insert');
-        const targetTable = (party_type === 'supplier') ? 'suppliers' : 'customers';
-        syncService.enqueueSync(targetTable, Number(party_id), 'update');
-      } catch (syncErr) {
-        console.warn('Non-blocking sync enqueue error:', syncErr);
-      }
-    }
 
     res.status(201).json({
       success: true,

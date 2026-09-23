@@ -1,7 +1,6 @@
 const Supplier = require('../models/Supplier');
 const { run } = require('../config/db');
 const { logActivity } = require('../models/ActivityLog');
-const syncService = require('../services/syncService');
 
 /**
  * Get all suppliers
@@ -95,12 +94,6 @@ async function createSupplier(req, res) {
       description: `نیا سپلائر رجسٹرڈ: ${name.trim()} (${phone ? phone.trim() : 'کوئی فون نہیں'})${openBal > 0 ? ` (ابتدائی بقایا: Rs. ${openBal})` : ''}`
     });
 
-    try {
-      syncService.enqueueSync('suppliers', newSupplier.id, 'insert');
-    } catch (syncErr) {
-      console.warn('Non-blocking sync enqueue error:', syncErr);
-    }
-
     res.status(201).json({
       success: true,
       message: 'Supplier added successfully',
@@ -154,12 +147,6 @@ async function updateSupplier(req, res) {
       description: `سپلائر کی تفصیلات میں ترمیم: ${name.trim()} (ID: ${id})`
     });
 
-    try {
-      syncService.enqueueSync('suppliers', id, 'update');
-    } catch (syncErr) {
-      console.warn('Non-blocking sync enqueue error:', syncErr);
-    }
-
     res.json({
       success: true,
       message: 'Supplier updated successfully',
@@ -199,12 +186,6 @@ async function deleteSupplier(req, res) {
       action: 'supplier_delete',
       description: `سپلائر حذف کیا گیا: ${existing.name} (ID: ${id})`
     });
-
-    try {
-      syncService.enqueueSync('suppliers', id, 'delete');
-    } catch (syncErr) {
-      console.warn('Non-blocking sync enqueue error:', syncErr);
-    }
 
     res.json({
       success: true,

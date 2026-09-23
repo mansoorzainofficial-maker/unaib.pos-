@@ -1,5 +1,4 @@
 const { query, get, run, transaction } = require('../config/db');
-const syncService = require('../services/syncService');
 
 /**
  * Get list of operational expenses
@@ -77,12 +76,6 @@ async function createExpense(req, res) {
       return ins.lastInsertRowid;
     });
 
-    try {
-      syncService.enqueueSync('expenses', result, 'insert');
-    } catch (syncErr) {
-      console.warn('Non-blocking sync enqueue error:', syncErr);
-    }
-
     return res.status(201).json({
       success: true,
       message: 'Expense recorded successfully',
@@ -118,12 +111,6 @@ async function deleteExpense(req, res) {
         `, [numAmount, numAmount, numAmount]);
       }
     });
-
-    try {
-      syncService.enqueueSync('expenses', id, 'delete');
-    } catch (syncErr) {
-      console.warn('Non-blocking sync enqueue error:', syncErr);
-    }
 
     return res.json({ success: true, message: 'Expense deleted successfully' });
   } catch (error) {

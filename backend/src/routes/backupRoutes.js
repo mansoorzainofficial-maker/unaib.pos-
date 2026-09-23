@@ -1,40 +1,32 @@
 const express = require('express');
 const router = express.Router();
 const { authRequired } = require('../middleware/auth');
-const backupService = require('../services/backupService');
-const { exec } = require('child_process');
 
-// List backups
+// List backups (Supabase Cloud Managed)
 router.get('/', authRequired, (req, res) => {
-  const result = backupService.listBackups();
-  return res.json(result);
+  return res.json({
+    success: true,
+    backups: [],
+    message: 'Unaib POS is connected to Supabase Cloud PostgreSQL. Backups are automated and managed continuously in Supabase Cloud.'
+  });
 });
 
-// Create manual backup
+// Create manual backup trigger
 router.post('/', authRequired, (req, res) => {
-  const trigger = req.body?.trigger || 'manual';
-  const result = backupService.createBackup(trigger);
-  if (!result.success) {
-    return res.status(500).json(result);
-  }
-  return res.json(result);
+  return res.json({
+    success: true,
+    message: 'Supabase Cloud maintains automated continuous WAL backups and Point-In-Time recovery.',
+    filename: 'supabase_cloud_managed',
+    sizeFormatted: 'Cloud Managed'
+  });
 });
 
-// Open backup folder in Windows Explorer
+// Open backup folder
 router.post('/open-folder', authRequired, (req, res) => {
-  try {
-    const dir = backupService.BACKUP_DIR;
-    if (process.platform === 'win32') {
-      exec(`explorer.exe "${dir}"`);
-    } else if (process.platform === 'darwin') {
-      exec(`open "${dir}"`);
-    } else {
-      exec(`xdg-open "${dir}"`);
-    }
-    return res.json({ success: true, message: 'Opened backup directory', path: dir });
-  } catch (err) {
-    return res.status(500).json({ success: false, message: err.message });
-  }
+  return res.json({
+    success: true,
+    message: 'Backups are managed in Supabase Cloud Dashboard.'
+  });
 });
 
 module.exports = router;
