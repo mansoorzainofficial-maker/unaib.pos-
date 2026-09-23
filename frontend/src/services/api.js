@@ -409,6 +409,25 @@ export const api = {
     create: (payload) => request('/grn', { method: 'POST', body: JSON.stringify(payload) })
   },
 
+  // Customers
+  customers: {
+    getAll: (params = {}) => api.invoices.getCustomers(params),
+    getById: (id) => request(`/customers/${id}`),
+    create: (data) => api.invoices.createCustomer(data),
+    update: (id, data) => api.invoices.updateCustomer(id, data),
+    delete: (id) => api.invoices.deleteCustomer(id)
+  },
+
+  // Accounts
+  accounts: {
+    getAll: () => request('/accounts'),
+    getById: (id) => request(`/accounts/${id}`),
+    getStatement: (id) => request(`/accounts/${id}/statement`),
+    create: (data) => request('/accounts', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id, data) => request(`/accounts/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    delete: (id) => request(`/accounts/${id}`, { method: 'DELETE' })
+  },
+
   // Local-First Cloud Sync Queue
   sync: {
     getStatus: () => request('/sync/status'),

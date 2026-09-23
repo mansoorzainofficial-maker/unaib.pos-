@@ -86,6 +86,35 @@ app.use(async (req, res, next) => {
   next();
 });
 
+// Root /api endpoint: explicitly defines the API and returns service catalog
+app.get(['/api', '/api/'], (req, res) => {
+  res.json({
+    success: true,
+    service: 'Unaib Computer Accessories POS API',
+    status: 'online',
+    message: 'Unaib POS Cloud API is defined and running successfully',
+    version: '1.0.0',
+    documentation: {
+      health: '/api/health',
+      auth: '/api/auth',
+      products: '/api/products',
+      invoices: '/api/invoices',
+      grn: '/api/grn',
+      ledger: '/api/ledger',
+      suppliers: '/api/suppliers',
+      customers: '/api/customers',
+      accounts: '/api/accounts',
+      reports: '/api/reports',
+      expenses: '/api/expenses',
+      drawer: '/api/drawer',
+      settings: '/api/settings',
+      activity_logs: '/api/activity-logs',
+      dashboard: '/api/dashboard'
+    },
+    timestamp: new Date().toISOString()
+  });
+});
+
 // Comprehensive Health check endpoint with live database ping & latency verification
 app.get('/api/health', async (req, res) => {
   const { pingDb, CURRENT_SCHEMA_VERSION } = require('./config/db');

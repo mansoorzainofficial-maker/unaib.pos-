@@ -1,6 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-contextBridge.exposeInMainWorld('electronAPI', {
+const apiBridge = {
   printReceipt: (options) => ipcRenderer.invoke('print-receipt', options),
   getPrinters: () => ipcRenderer.invoke('get-printers'),
   getVersion: () => ipcRenderer.invoke('get-version'),
@@ -9,4 +9,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   minimizeWindow: () => ipcRenderer.send('window-minimize'),
   maximizeWindow: () => ipcRenderer.send('window-maximize'),
   closeWindow: () => ipcRenderer.send('window-close')
-});
+};
+
+contextBridge.exposeInMainWorld('electronAPI', apiBridge);
+contextBridge.exposeInMainWorld('api', apiBridge);
+
