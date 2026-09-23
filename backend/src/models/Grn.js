@@ -7,8 +7,8 @@ class Grn {
         g.id,
         g.grn_number,
         g.supplier_id,
-        s.name AS supplier_name,
-        s.phone AS supplier_phone,
+        COALESCE(s.name, 'Direct Vendor / No Supplier') AS supplier_name,
+        COALESCE(s.phone, '') AS supplier_phone,
         g.total_amount,
         g.payment_type,
         g.status,
@@ -18,7 +18,7 @@ class Grn {
         (SELECT COUNT(*) FROM grn_items gi WHERE gi.grn_id = g.id) AS total_items,
         (SELECT COALESCE(SUM(gi.quantity_received), 0) FROM grn_items gi WHERE gi.grn_id = g.id) AS total_quantity_received
       FROM grn g
-      JOIN suppliers s ON g.supplier_id = s.id
+      LEFT JOIN suppliers s ON g.supplier_id = s.id
       ORDER BY g.id DESC
     `);
   }
@@ -29,7 +29,7 @@ class Grn {
         g.id,
         g.grn_number,
         g.supplier_id,
-        s.name AS supplier_name,
+        COALESCE(s.name, 'Direct Vendor') AS supplier_name,
         s.contact_person AS supplier_contact_person,
         s.phone AS supplier_phone,
         s.email AS supplier_email,
@@ -42,7 +42,7 @@ class Grn {
         g.notes,
         g.created_at
       FROM grn g
-      JOIN suppliers s ON g.supplier_id = s.id
+      LEFT JOIN suppliers s ON g.supplier_id = s.id
       WHERE g.id = ?
     `, [id]);
 
@@ -53,14 +53,14 @@ class Grn {
         gi.id,
         gi.grn_id,
         gi.product_id,
-        p.name AS product_name,
-        p.barcode AS product_barcode,
+        COALESCE(p.name, 'Unknown / Deleted Product') AS product_name,
+        COALESCE(p.barcode, '') AS product_barcode,
         gi.quantity_ordered,
         gi.quantity_received,
         gi.unit_cost,
         gi.total_cost
       FROM grn_items gi
-      JOIN products p ON gi.product_id = p.id
+      LEFT JOIN products p ON gi.product_id = p.id
       WHERE gi.grn_id = ?
       ORDER BY gi.id ASC
     `, [id]);
@@ -211,8 +211,11 @@ class Grn {
           console.warn('Ledger entry log notice:', ledgerErr.message);
         }
       } else if (payment_type === 'cash') {
-        // Find default cash account to deduct balance
-        const defaultAcc = await txGet("SELECT id, current_balance FROM accounts WHERE is_default = 1 LIMIT 1");
+        // Find default cash account to deduct balance safely
+        let defaultAcc = await txGet("SELECT id, current_balance FROM accounts WHERE is_default = 1 LIMIT 1");
+        if (!defaultAcc) {
+          defaultAcc = (await txGet("SELECT id, current_balance FROM accounts WHERE type = 'cash' LIMIT 1")) || (await txGet("SELECT id, current_balance FROM accounts LIMIT 1"));
+        }
         if (defaultAcc) {
           await txRun(`
             INSERT INTO accounts_ledger (
@@ -220,7 +223,7 @@ class Grn {
             ) VALUES (
               ?, 'grn_cash', ?, 0.0, ?, (SELECT current_balance - ? FROM accounts WHERE id = ?), ?
             )
-          `, [defaultAcc.id, grnNumber, calculatedTotal, calculatedTotal, defaultAcc.id, `Paid cash for ${grnNumber} to ${supplier.name}`]);
+          `, [defaultAcc.id, grnNumber, calculatedTotal, calculatedTotal, defaultAcc.id, `Paid cash for ${grnNumber} to ${supplier.name || 'Supplier'}`]);
           await txRun('UPDATE accounts SET current_balance = current_balance - ? WHERE id = ?', [calculatedTotal, defaultAcc.id]);
         }
       }

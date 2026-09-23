@@ -397,15 +397,13 @@ export const api = {
   // GRN (Goods Received Note)
   grn: {
     getAll: async () => {
-      try {
-        const res = await request('/grn');
-        return res.grns || res.data || [];
-      } catch (err) {
-        console.warn('API grn getAll warning:', err);
-        return [];
-      }
+      const res = await request('/grn');
+      return res.grns || res.data || (Array.isArray(res) ? res : []);
     },
-    getById: (id) => request(`/grn/${id}`),
+    getById: async (id) => {
+      const res = await request(`/grn/${id}`);
+      return res.grn || res;
+    },
     create: (payload) => request('/grn', { method: 'POST', body: JSON.stringify(payload) })
   },
 
