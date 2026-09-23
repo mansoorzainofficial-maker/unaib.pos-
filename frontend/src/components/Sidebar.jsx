@@ -16,10 +16,11 @@ import {
   RotateCcw,
   Building2,
   History,
-  LayoutDashboard
+  LayoutDashboard,
+  X
 } from 'lucide-react';
 
-export default function Sidebar({ currentTab, setTab }) {
+export default function Sidebar({ currentTab, setTab, isMobileOpen = false, onCloseMobile }) {
   const { isAdmin } = useAuth();
   const { t, isUrdu } = useLanguage();
   const [dbLabel, setDbLabel] = useState(() => (navigator.onLine ? '' : 'SQLite (Local)'));
@@ -108,25 +109,42 @@ export default function Sidebar({ currentTab, setTab }) {
     ] : [])
   ];
 
-  return (
-    <aside className="w-56 bg-white border-r border-slate-200/80 flex flex-col justify-between select-none py-3.5 px-2.5 shadow-xs shrink-0">
+  const handleItemClick = (id) => {
+    setTab(id);
+    if (onCloseMobile) onCloseMobile();
+  };
+
+  const renderNavContent = (isMobile = false) => (
+    <div className="flex flex-col justify-between h-full select-none">
       <div className="space-y-3">
-        {/* Brand Logo Header (Matching HRdream logo style) */}
-        <div className="flex items-center space-x-2.5 px-2 pb-2.5 border-b border-slate-100">
-          <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-sm shadow-blue-500/20">
-            <Store className="w-4 h-4" />
-          </div>
-          <div>
-            <div className="text-xs font-black tracking-tight text-slate-900 flex items-center gap-1.5">
-              <span>UNAIB</span>
-              <span className="text-[9px] bg-blue-50 text-blue-700 font-bold px-1 py-0.5 rounded border border-blue-200">POS</span>
+        {/* Brand Logo Header */}
+        <div className="flex items-center justify-between px-2 pb-2.5 border-b border-slate-100">
+          <div className="flex items-center space-x-2.5">
+            <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center text-white shadow-sm shadow-blue-500/20">
+              <Store className="w-4 h-4" />
             </div>
-            <p className="text-[10px] text-slate-400 font-medium">Computer Accessories</p>
+            <div>
+              <div className="text-xs font-black tracking-tight text-slate-900 flex items-center gap-1.5">
+                <span>UNAIB</span>
+                <span className="text-[9px] bg-blue-50 text-blue-700 font-bold px-1 py-0.5 rounded border border-blue-200">POS</span>
+              </div>
+              <p className="text-[10px] text-slate-400 font-medium">Computer Accessories</p>
+            </div>
           </div>
+          {isMobile && (
+            <button
+              type="button"
+              onClick={onCloseMobile}
+              aria-label="Close navigation"
+              className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
         </div>
 
         {/* Navigation list */}
-        <nav className="space-y-1">
+        <nav className="space-y-1 overflow-y-auto max-h-[calc(100vh-200px)] md:max-h-none">
           {mainNavItems.map((item) => {
             const Icon = item.icon;
             const isActive = currentTab === item.id;
@@ -134,7 +152,7 @@ export default function Sidebar({ currentTab, setTab }) {
             return (
               <button
                 key={item.id}
-                onClick={() => setTab(item.id)}
+                onClick={() => handleItemClick(item.id)}
                 className={`w-full flex items-center justify-between px-2.5 py-2 rounded-xl text-xs transition-all cursor-pointer ${
                   isActive
                     ? 'bg-blue-50 text-blue-600 font-bold shadow-xs'
@@ -172,7 +190,7 @@ export default function Sidebar({ currentTab, setTab }) {
       <div className="pt-2.5 border-t border-slate-100 space-y-2">
         {isAdmin && (
           <button
-            onClick={() => setTab('settings')}
+            onClick={() => handleItemClick('settings')}
             className={`w-full flex items-center space-x-2.5 px-2.5 py-2 rounded-xl text-xs transition-all cursor-pointer ${
               currentTab === 'settings'
                 ? 'bg-blue-50 text-blue-600 font-bold shadow-xs'
@@ -195,6 +213,30 @@ export default function Sidebar({ currentTab, setTab }) {
           </span>
         </div>
       </div>
-    </aside>
+    </div>
+  );
+
+  return (
+    <>
+      {/* Desktop Persistent Sidebar */}
+      <aside className="hidden md:flex w-56 bg-white border-r border-slate-200/80 flex-col justify-between select-none py-3.5 px-2.5 shadow-xs shrink-0">
+        {renderNavContent(false)}
+      </aside>
+
+      {/* Mobile Drawer Overlay */}
+      {isMobileOpen && (
+        <div className="fixed inset-0 z-50 md:hidden flex">
+          {/* Dark Backdrop */}
+          <div
+            className="fixed inset-0 bg-slate-950/50 backdrop-blur-xs transition-opacity"
+            onClick={onCloseMobile}
+          />
+          {/* Sliding Drawer Body */}
+          <aside className="relative w-64 max-w-[82vw] bg-white z-10 flex flex-col justify-between py-3.5 px-2.5 shadow-2xl h-full animate-slide-in">
+            {renderNavContent(true)}
+          </aside>
+        </div>
+      )}
+    </>
   );
 }

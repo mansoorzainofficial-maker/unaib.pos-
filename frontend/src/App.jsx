@@ -32,6 +32,7 @@ export default function App() {
   const [ledgerPartyId, setLedgerPartyId] = useState(null);
   const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
   const [lowStockCount, setLowStockCount] = useState(0);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   // Secret access triggers for Audit Trail (Completely hidden from client)
   useEffect(() => {
@@ -84,13 +85,16 @@ export default function App() {
       <Navbar
         onOpenShiftModal={() => setIsShiftModalOpen(true)}
         lowStockCount={lowStockCount}
+        onToggleMobileMenu={() => setIsMobileMenuOpen(prev => !prev)}
       />
 
       {/* Main Workspace: Left Sidebar + Dynamic Screen */}
-      <div className="flex-1 flex overflow-hidden min-h-0">
+      <div className="flex-1 flex overflow-hidden min-h-0 relative">
         <Sidebar
           currentTab={activeTabSafe}
           setTab={setCurrentTab}
+          isMobileOpen={isMobileMenuOpen}
+          onCloseMobile={() => setIsMobileMenuOpen(false)}
         />
 
         <main className="flex-1 flex overflow-hidden relative min-h-0 min-w-0">

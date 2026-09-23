@@ -2,10 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { api } from '../services/api';
-import { ShieldCheck, User, LogOut, AlertTriangle, Clock, Store, Globe } from 'lucide-react';
+import { ShieldCheck, User, LogOut, AlertTriangle, Clock, Store, Globe, Menu } from 'lucide-react';
 import OnlineStatusIndicator from './OnlineStatusIndicator';
 
-export default function Navbar({ onOpenShiftModal, lowStockCount = 0 }) {
+export default function Navbar({ onOpenShiftModal, lowStockCount = 0, onToggleMobileMenu }) {
   const { user, logout, isAdmin } = useAuth();
   const { lang, toggleLanguage, t, isUrdu } = useLanguage();
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString());
@@ -31,17 +31,26 @@ export default function Navbar({ onOpenShiftModal, lowStockCount = 0 }) {
   }, [user]);
 
   return (
-    <header className="h-14 bg-white border-b border-slate-200/80 px-4 md:px-5 flex items-center justify-between select-none z-20 shadow-xs">
-      {/* Brand & Store Info */}
-      <div className="flex items-center space-x-3">
-        <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center shadow-sm shadow-blue-500/20">
+    <header className="h-14 bg-white border-b border-slate-200/80 px-3 md:px-5 flex items-center justify-between select-none z-20 shadow-xs">
+      {/* Brand & Store Info + Mobile Hamburger */}
+      <div className="flex items-center space-x-2 md:space-x-3">
+        <button
+          type="button"
+          onClick={onToggleMobileMenu}
+          aria-label="Open Navigation Menu"
+          className="p-1.5 -ml-1 text-slate-700 hover:bg-slate-100 rounded-xl md:hidden cursor-pointer flex items-center justify-center"
+        >
+          <Menu className="w-5 h-5 text-slate-700" />
+        </button>
+
+        <div className="w-8 h-8 rounded-xl bg-blue-600 flex items-center justify-center shadow-sm shadow-blue-500/20 shrink-0">
           <Store className="w-4 h-4 text-white" />
         </div>
         <div>
-          <h1 className="text-sm font-black tracking-tight text-slate-900 flex items-center gap-1.5">
-            UNAIB <span className="text-blue-600 font-bold text-[10px] tracking-wider uppercase px-1.5 py-0.5 rounded bg-blue-50 border border-blue-200">{t('terminal_title')}</span>
+          <h1 className="text-xs sm:text-sm font-black tracking-tight text-slate-900 flex items-center gap-1.5">
+            UNAIB <span className="text-blue-600 font-bold text-[9px] sm:text-[10px] tracking-wider uppercase px-1.5 py-0.5 rounded bg-blue-50 border border-blue-200">{t('terminal_title')}</span>
           </h1>
-          <p className="text-[10px] font-medium text-slate-400">{t('store_sub')}</p>
+          <p className="text-[10px] font-medium text-slate-400 hidden sm:block">{t('store_sub')}</p>
         </div>
       </div>
 
