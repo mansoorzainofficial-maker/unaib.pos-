@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Truck, Plus, CheckCircle2, AlertCircle, Loader2, ArrowRight, Calendar, DollarSign, FileText } from 'lucide-react';
+import { Truck, Plus, CheckCircle2, AlertCircle, Loader2, ArrowRight, Calendar, DollarSign, FileText, Edit, RefreshCw } from 'lucide-react';
 import { api } from '../services/api';
+import { grnApi } from '../services/grnApi';
 import { useLanguage } from '../context/LanguageContext';
 import GrnItemRow from '../components/GrnItemRow';
 import QuickProductModal from '../components/QuickProductModal';
@@ -8,7 +9,7 @@ import SupplierForm from '../components/SupplierForm';
 import BarcodeScannerInput from '../components/BarcodeScannerInput';
 import { getCachedProducts } from '../utils/indexedDB';
 
-export default function CreateGrn({ onNavigateToList }) {
+export default function CreateGrn({ onNavigateToList, editGrnId }) {
   const { t, isUrdu } = useLanguage();
   const [suppliers, setSuppliers] = useState([]);
   const [products, setProducts] = useState([]);
@@ -24,6 +25,7 @@ export default function CreateGrn({ onNavigateToList }) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
+  const [editingGrnNumber, setEditingGrnNumber] = useState('');
 
   // Quick Add modals state
   const [isAddProductOpen, setIsAddProductOpen] = useState(false);
@@ -33,7 +35,40 @@ export default function CreateGrn({ onNavigateToList }) {
 
   useEffect(() => {
     loadMeta();
-  }, []);
+    if (editGrnId) {
+      loadEditData(editGrnId);
+    }
+  }, [editGrnId]);
+
+  const loadEditData = async (id) => {
+    setLoading(true);
+    setErrorMsg('');
+    try {
+      const data = await grnApi.getById(id);
+      if (data) {
+        setEditingGrnNumber(data.grn_number);
+        setSupplierId(data.supplier_id);
+        setPaymentType(data.payment_type || 'credit');
+        setReceivedDate(data.received_date ? String(data.received_date).split('T')[0] : new Date().toISOString().split('T')[0]);
+        setNotes(data.notes || '');
+        if (Array.isArray(data.items) && data.items.length > 0) {
+          setItems(data.items.map(it => ({
+            product_id: it.product_id,
+            category_id: '',
+            custom_product_name: it.product_name,
+            quantity_ordered: it.quantity_ordered || it.quantity_received,
+            quantity_received: it.quantity_received,
+            unit_cost: Number(it.unit_cost) || 0
+          })));
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load GRN for editing:', err);
+      setErrorMsg(err.message || (isUrdu ? 'GRN لوڈ کرنے میں خرابی' : 'Failed to load GRN details'));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const loadMeta = async () => {
     setLoading(true);
@@ -290,11 +325,22 @@ export default function CreateGrn({ onNavigateToList }) {
         }))
       };
 
-      const res = await grnApi.create(payload);
+      let res;
+      if (editGrnId) {
+        res = await grnApi.update(editGrnId, payload);
+      } else {
+        res = await grnApi.create(payload);
+      }
+
       if (res.success) {
+        const num = res.grn?.grn_number || editingGrnNumber || '';
         setSuccessMsg(isUrdu
-          ? `✓ رسید #${res.grn.grn_number} کامیابی سے محفوظ ہو گئی! گودام اسٹاک اور کھاتہ اپڈیٹ ہو گیا۔`
-          : `✓ GRN #${res.grn.grn_number} saved successfully! Inventory and ledger updated.`
+          ? (editGrnId
+              ? `✓ رسید #${num} کامیابی سے اپڈیٹ ہو گئی! انوینٹری اسٹاک اور کھاتہ خودکار ایڈجسٹ ہو گیا۔`
+              : `✓ رسید #${num} کامیابی سے محفوظ ہو گئی! گودام اسٹاک اور کھاتہ اپڈیٹ ہو گیا۔`)
+          : (editGrnId
+              ? `✓ GRN #${num} updated successfully! Inventory and ledger balances auto-adjusted.`
+              : `✓ GRN #${num} saved successfully! Inventory and ledger updated.`)
         );
         // Reset form
         setItems([{ product_id: '', category_id: '', custom_product_name: '', quantity_ordered: 1, quantity_received: 1, unit_cost: 0 }]);
@@ -305,7 +351,7 @@ export default function CreateGrn({ onNavigateToList }) {
         }, 1500);
       }
     } catch (err) {
-      console.error('Failed to create GRN:', err);
+      console.error('Failed to save GRN:', err);
       setErrorMsg(err.message || (isUrdu ? 'GRN محفوظ کرنے میں خرابی پیش آگئی۔' : 'Failed to save GRN.'));
     } finally {
       setIsSubmitting(false);
@@ -321,8 +367,16 @@ export default function CreateGrn({ onNavigateToList }) {
             <Truck className="w-5 h-5" />
           </div>
           <div>
-            <h1 className="text-base font-black text-slate-900 tracking-tight">{t('grn_create_title')}</h1>
-            <p className="text-xs text-slate-500 font-medium">{t('grn_create_sub')}</p>
+            <h1 className="text-base font-black text-slate-900 tracking-tight">
+              {editGrnId
+                ? (isUrdu ? `ترمیم رسید وصولی مال (${editingGrnNumber || 'GRN'})` : `Edit Goods Received Note (${editingGrnNumber || 'GRN'})`)
+                : t('grn_create_title')}
+            </h1>
+            <p className="text-xs text-slate-500 font-medium">
+              {editGrnId
+                ? (isUrdu ? 'کوانٹٹی تبدیل کرنے پر اسٹاک کا فرق خودکار پلس یا مائنس ہو جائے گا' : 'Modifying quantities will automatically adjust inventory stock differences')
+                : t('grn_create_sub')}
+            </p>
           </div>
         </div>
 
@@ -569,12 +623,12 @@ export default function CreateGrn({ onNavigateToList }) {
               {isSubmitting ? (
                 <>
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>{t('grn_saving_btn')}</span>
+                  <span>{editGrnId ? (isUrdu ? 'تبدیلیاں محفوظ ہو رہی ہیں...' : 'Updating GRN...') : t('grn_saving_btn')}</span>
                 </>
               ) : (
                 <>
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>{t('grn_submit_btn')}</span>
+                  {editGrnId ? <RefreshCw className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
+                  <span>{editGrnId ? (isUrdu ? 'تبدیلیاں محفوظ کریں اور اسٹاک سنک کریں' : 'Save Changes & Sync Stock') : t('grn_submit_btn')}</span>
                 </>
               )}
             </button>

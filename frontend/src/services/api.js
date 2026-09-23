@@ -406,7 +406,9 @@ export const api = {
       const res = await request(`/grn/${id}`);
       return res.grn || res;
     },
-    create: (payload) => request('/grn', { method: 'POST', body: JSON.stringify(payload) })
+    create: (payload) => request('/grn', { method: 'POST', body: JSON.stringify(payload) }),
+    update: (id, payload) => request(`/grn/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+    delete: (id, options = {}) => request(`/grn/${id}`, { method: 'DELETE', body: JSON.stringify(options) })
   },
 
   // Customers

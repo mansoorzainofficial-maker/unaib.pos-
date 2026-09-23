@@ -11,6 +11,14 @@ export const grnApi = {
 
   create: async (payload) => {
     return await api.grn.create(payload);
+  },
+
+  update: async (id, payload) => {
+    return await api.grn.update(id, payload);
+  },
+
+  delete: async (id, options = {}) => {
+    return await api.grn.delete(id, options);
   }
 };
 

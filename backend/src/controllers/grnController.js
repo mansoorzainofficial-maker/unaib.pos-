@@ -132,8 +132,84 @@ async function createGrn(req, res) {
   }
 }
 
+/**
+ * Update an existing GRN with automatic inventory stock adjustment
+ * PUT /api/grn/:id
+ */
+async function updateGrn(req, res) {
+  try {
+    const { id } = req.params;
+    const { supplier_id, payment_type, received_date, notes, items, allow_negative_stock } = req.body;
+
+    if (!supplier_id) {
+      return res.status(400).json({ success: false, error: 'Supplier selection is required' });
+    }
+    if (!payment_type || !['cash', 'credit'].includes(payment_type)) {
+      return res.status(400).json({ success: false, error: 'Payment type must be "cash" or "credit"' });
+    }
+    if (!received_date) {
+      return res.status(400).json({ success: false, error: 'Received date is required' });
+    }
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ success: false, error: 'At least one product item is required' });
+    }
+
+    await Grn.update(id, {
+      supplier_id: Number(supplier_id),
+      payment_type,
+      received_date,
+      notes: notes && notes.trim() ? notes.trim() : null,
+      items,
+      allowNegativeStock: Boolean(allow_negative_stock)
+    });
+
+    const refreshed = await Grn.getById(id);
+    res.json({
+      success: true,
+      message: `Goods Received Note ${refreshed?.grn_number || id} updated successfully with inventory sync`,
+      grn: refreshed
+    });
+  } catch (err) {
+    console.error('Error updating GRN:', err);
+    res.status(400).json({
+      success: false,
+      error: err.message || 'Failed to update GRN'
+    });
+  }
+}
+
+/**
+ * Delete / Void a GRN with automatic inventory stock deduction and ledger reversal
+ * DELETE /api/grn/:id
+ */
+async function deleteGrn(req, res) {
+  try {
+    const { id } = req.params;
+    const { allow_negative_stock, reason } = req.body || {};
+
+    const result = await Grn.delete(id, {
+      allowNegativeStock: Boolean(allow_negative_stock),
+      reason: reason || 'Deleted by user'
+    });
+
+    res.json({
+      success: true,
+      message: `Goods Received Note ${result.grn_number} voided/deleted successfully. Inventory stock automatically deducted.`,
+      result
+    });
+  } catch (err) {
+    console.error('Error deleting GRN:', err);
+    res.status(400).json({
+      success: false,
+      error: err.message || 'Failed to delete GRN'
+    });
+  }
+}
+
 module.exports = {
   getAllGrns,
   getGrnById,
-  createGrn
+  createGrn,
+  updateGrn,
+  deleteGrn
 };

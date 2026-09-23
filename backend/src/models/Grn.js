@@ -234,6 +234,297 @@ class Grn {
     // 7. Read full record AFTER transaction commits
     return await this.getById(grnId);
   }
+
+  /**
+   * Delete / Void a GRN with automatic inventory stock reversal and ledger adjustment
+   */
+  static async delete(id, { allowNegativeStock = false, reason = '' } = {}) {
+    const grnId = Number(id);
+    if (!grnId) throw new Error('Valid GRN ID is required');
+
+    return await transaction(async ({ query: txQuery, get: txGet, run: txRun }) => {
+      // 1. Fetch GRN header
+      const grn = await txGet('SELECT * FROM grn WHERE id = ?', [grnId]);
+      if (!grn) {
+        throw new Error(`GRN record #${grnId} not found`);
+      }
+
+      // 2. Fetch all GRN items
+      const items = await txQuery('SELECT * FROM grn_items WHERE grn_id = ?', [grnId]);
+
+      // 3. Verify stock availability before reducing to prevent negative stock
+      for (const item of items) {
+        const prod = await txGet('SELECT id, name, stock_quantity FROM products WHERE id = ?', [item.product_id]);
+        if (!prod) continue;
+        const currentStock = Number(prod.stock_quantity) || 0;
+        const returnQty = Number(item.quantity_received) || 0;
+        if (currentStock < returnQty && !allowNegativeStock) {
+          throw new Error(
+            `GRN منسوخ نہیں ہو سکتی: پروڈکٹ "${prod.name}" کا موجودہ اسٹاک صرف ${currentStock} ہے، جبکہ اس GRN سے ${returnQty} منسوخ کرنے ہیں۔ کچھ سامان پہلے ہی فروخت ہو چکا ہے! (GRN cannot be deleted: current stock for "${prod.name}" is ${currentStock}, but GRN received ${returnQty}. Items have already been sold.)`
+          );
+        }
+      }
+
+      // 4. Deduct inventory stock for each item
+      for (const item of items) {
+        const returnQty = Number(item.quantity_received) || 0;
+        await txRun(`
+          UPDATE products 
+          SET stock_quantity = stock_quantity - ?,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `, [returnQty, item.product_id]);
+      }
+
+      // 5. Reverse Financials / Ledger
+      const totalAmount = Number(grn.total_amount) || 0;
+      if (grn.payment_type === 'credit' && grn.supplier_id) {
+        // Reverse supplier balance
+        await txRun(`
+          UPDATE suppliers
+          SET total_due = GREATEST(0, COALESCE(total_due, 0.0) - ?),
+              current_balance = COALESCE(current_balance, 0.0) - ?
+          WHERE id = ?
+        `, [totalAmount, totalAmount, grn.supplier_id]);
+
+        // Add reversing ledger entry
+        try {
+          await txRun(`
+            INSERT INTO ledger_entries (
+              party_type, party_id, entry_type, reference_no,
+              debit, credit, account_id, description, entry_date
+            ) VALUES (
+              'supplier', ?, 'grn_void', ?,
+              0.0, ?, NULL, ?, CURRENT_DATE
+            )
+          `, [
+            grn.supplier_id,
+            grn.grn_number,
+            totalAmount,
+            `GRN Voided/Deleted: ${grn.grn_number}${reason ? ` - ${reason}` : ''}`
+          ]);
+        } catch (ledgerErr) {
+          console.warn('Ledger reversal note:', ledgerErr.message);
+        }
+      } else if (grn.payment_type === 'cash') {
+        let defaultAcc = await txGet("SELECT id, current_balance FROM accounts WHERE is_default = 1 LIMIT 1");
+        if (!defaultAcc) {
+          defaultAcc = (await txGet("SELECT id, current_balance FROM accounts WHERE type = 'cash' LIMIT 1")) || (await txGet("SELECT id, current_balance FROM accounts LIMIT 1"));
+        }
+        if (defaultAcc) {
+          await txRun(`
+            INSERT INTO accounts_ledger (
+              account_id, entry_type, reference_no, debit, credit, balance_after, description
+            ) VALUES (
+              ?, 'grn_cash_refund', ?, ?, 0.0, (SELECT current_balance + ? FROM accounts WHERE id = ?), ?
+            )
+          `, [defaultAcc.id, grn.grn_number, totalAmount, totalAmount, defaultAcc.id, `Refund for voided GRN ${grn.grn_number}`]);
+          await txRun('UPDATE accounts SET current_balance = current_balance + ? WHERE id = ?', [totalAmount, defaultAcc.id]);
+        }
+      }
+
+      // 6. Delete GRN items & GRN header
+      await txRun('DELETE FROM grn_items WHERE grn_id = ?', [grnId]);
+      await txRun('DELETE FROM grn WHERE id = ?', [grnId]);
+
+      return {
+        success: true,
+        deleted_grn_id: grnId,
+        grn_number: grn.grn_number,
+        total_amount: totalAmount,
+        reversed_items_count: items.length
+      };
+    });
+  }
+
+  /**
+   * Update / Edit an existing GRN with automatic stock delta adjustment and ledger recalculation
+   */
+  static async update(id, { supplier_id, payment_type, received_date, notes = null, items = [], allowNegativeStock = false } = {}) {
+    const grnId = Number(id);
+    if (!grnId) throw new Error('Valid GRN ID is required');
+    if (!supplier_id) throw new Error('Supplier is required');
+    if (!payment_type || !['cash', 'credit'].includes(payment_type)) {
+      throw new Error('Valid payment type ("cash" or "credit") is required');
+    }
+    if (!received_date) throw new Error('Received date is required');
+    if (!Array.isArray(items) || items.length === 0) {
+      throw new Error('At least one product item is required in GRN');
+    }
+
+    return await transaction(async ({ query: txQuery, get: txGet, run: txRun }) => {
+      // 1. Fetch existing GRN
+      const oldGrn = await txGet('SELECT * FROM grn WHERE id = ?', [grnId]);
+      if (!oldGrn) {
+        throw new Error(`GRN record #${grnId} not found`);
+      }
+
+      // 2. Fetch existing GRN items
+      const oldItems = await txQuery('SELECT * FROM grn_items WHERE grn_id = ?', [grnId]);
+      const oldProductQtyMap = new Map();
+      for (const it of oldItems) {
+        oldProductQtyMap.set(Number(it.product_id), Number(it.quantity_received) || 0);
+      }
+
+      // 3. Validate new items and calculate totals
+      let calculatedTotal = 0;
+      const validatedNewItems = [];
+      const newProductQtyMap = new Map();
+
+      for (let idx = 0; idx < items.length; idx++) {
+        const item = items[idx];
+        const prod = await txGet('SELECT id, name, stock_quantity, cost_price FROM products WHERE id = ?', [item.product_id]);
+        if (!prod) {
+          throw new Error(`Item #${idx + 1}: Product with ID ${item.product_id} does not exist`);
+        }
+
+        const qtyOrdered = Number(item.quantity_ordered) || Number(item.quantity_received) || 1;
+        const qtyReceived = Number(item.quantity_received) || 0;
+        const unitCost = Number(item.unit_cost) || 0;
+
+        if (qtyReceived <= 0) {
+          throw new Error(`Item #${idx + 1} (${prod.name}): Quantity received must be greater than 0`);
+        }
+        if (unitCost < 0) {
+          throw new Error(`Item #${idx + 1} (${prod.name}): Unit cost cannot be negative`);
+        }
+
+        const lineTotal = Math.round(qtyReceived * unitCost * 100) / 100;
+        calculatedTotal += lineTotal;
+
+        const prodId = Number(prod.id);
+        newProductQtyMap.set(prodId, (newProductQtyMap.get(prodId) || 0) + qtyReceived);
+
+        validatedNewItems.push({
+          product_id: prodId,
+          product_name: prod.name,
+          quantity_ordered: qtyOrdered,
+          quantity_received: qtyReceived,
+          unit_cost: unitCost,
+          total_cost: lineTotal
+        });
+      }
+
+      calculatedTotal = Math.round(calculatedTotal * 100) / 100;
+
+      // 4. Verify stock safety for all impacted products (deltas)
+      const allProductIds = new Set([...oldProductQtyMap.keys(), ...newProductQtyMap.keys()]);
+      for (const pid of allProductIds) {
+        const oldQty = oldProductQtyMap.get(pid) || 0;
+        const newQty = newProductQtyMap.get(pid) || 0;
+        const delta = newQty - oldQty; // if negative, we are deducting stock
+
+        if (delta < 0) {
+          const prod = await txGet('SELECT name, stock_quantity FROM products WHERE id = ?', [pid]);
+          const currentStock = Number(prod?.stock_quantity) || 0;
+          const neededStock = Math.abs(delta);
+          if (currentStock < neededStock && !allowNegativeStock) {
+            throw new Error(
+              `GRN تبدیل نہیں ہو سکتی: پروڈکٹ "${prod?.name}" کا اسٹاک ${neededStock} کم کرنا ہے، لیکن موجودہ اسٹاک صرف ${currentStock} ہے۔ (Cannot update GRN: "${prod?.name}" needs ${neededStock} deducted, but current stock is only ${currentStock})`
+            );
+          }
+        }
+      }
+
+      // 5. Apply Stock Adjustments for each product
+      for (const pid of allProductIds) {
+        const oldQty = oldProductQtyMap.get(pid) || 0;
+        const newQty = newProductQtyMap.get(pid) || 0;
+        const delta = newQty - oldQty;
+
+        if (delta !== 0) {
+          await txRun(`
+            UPDATE products
+            SET stock_quantity = stock_quantity + ?,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+          `, [delta, pid]);
+        }
+      }
+
+      // 6. Adjust Financials / Ledger
+      const oldTotal = Number(oldGrn.total_amount) || 0;
+      const amountDelta = Math.round((calculatedTotal - oldTotal) * 100) / 100;
+      const oldSupplierId = Number(oldGrn.supplier_id);
+      const newSupplierId = Number(supplier_id);
+
+      if (oldGrn.payment_type === 'credit') {
+        if (oldSupplierId === newSupplierId) {
+          if (amountDelta !== 0) {
+            await txRun(`
+              UPDATE suppliers
+              SET total_due = GREATEST(0, COALESCE(total_due, 0.0) + ?),
+                  current_balance = COALESCE(current_balance, 0.0) + ?
+              WHERE id = ?
+            `, [amountDelta, amountDelta, newSupplierId]);
+
+            try {
+              await txRun(`
+                INSERT INTO ledger_entries (
+                  party_type, party_id, entry_type, reference_no,
+                  debit, credit, account_id, description, entry_date
+                ) VALUES (
+                  'supplier', ?, 'grn_edit', ?,
+                  ?, 0.0, NULL, ?, CURRENT_DATE
+                )
+              `, [
+                newSupplierId,
+                oldGrn.grn_number,
+                amountDelta,
+                `GRN Edited: ${oldGrn.grn_number} (Amount adjusted by ${amountDelta})`
+              ]);
+            } catch (_) {}
+          }
+        } else {
+          // Supplier changed: reverse old supplier completely, charge new supplier
+          await txRun(`
+            UPDATE suppliers
+            SET total_due = GREATEST(0, COALESCE(total_due, 0.0) - ?),
+                current_balance = COALESCE(current_balance, 0.0) - ?
+            WHERE id = ?
+          `, [oldTotal, oldTotal, oldSupplierId]);
+
+          await txRun(`
+            UPDATE suppliers
+            SET total_due = COALESCE(total_due, 0.0) + ?,
+                current_balance = COALESCE(current_balance, 0.0) + ?
+            WHERE id = ?
+          `, [calculatedTotal, calculatedTotal, newSupplierId]);
+        }
+      }
+
+      // 7. Replace grn_items with updated items
+      await txRun('DELETE FROM grn_items WHERE grn_id = ?', [grnId]);
+      for (const item of validatedNewItems) {
+        await txRun(`
+          INSERT INTO grn_items (grn_id, product_id, quantity_ordered, quantity_received, unit_cost, total_cost)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `, [grnId, item.product_id, item.quantity_ordered, item.quantity_received, item.unit_cost, item.total_cost]);
+
+        // Also update product cost_price and supplier
+        await txRun(`
+          UPDATE products
+          SET cost_price = ?,
+              supplier_id = ?,
+              updated_at = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `, [item.unit_cost, newSupplierId, item.product_id]);
+      }
+
+      // 8. Update GRN header
+      await txRun(`
+        UPDATE grn
+        SET supplier_id = ?,
+            total_amount = ?,
+            payment_type = ?,
+            received_date = ?,
+            notes = ?
+        WHERE id = ?
+      `, [newSupplierId, calculatedTotal, payment_type, received_date, notes, grnId]);
+
+      return grnId;
+    });
+  }
 }
 
 module.exports = Grn;

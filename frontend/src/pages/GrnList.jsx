@@ -1,15 +1,25 @@
 import React, { useState, useEffect } from 'react';
-import { Truck, Plus, Search, Eye, X, FileText, Calendar, DollarSign, Package } from 'lucide-react';
+import { Truck, Plus, Search, Eye, Edit, Trash2, X, FileText, Calendar, DollarSign, Package, AlertTriangle, CheckCircle2, AlertCircle } from 'lucide-react';
 import { grnApi } from '../services/grnApi';
 import { useLanguage } from '../context/LanguageContext';
 
-export default function GrnList({ onNavigateToCreate }) {
+export default function GrnList({ onNavigateToCreate, onNavigateToEdit }) {
   const { t, isUrdu } = useLanguage();
   const [grns, setGrns] = useState([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [selectedGrn, setSelectedGrn] = useState(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+
+  // Delete modal state
+  const [deletingGrn, setDeletingGrn] = useState(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [allowNegativeStock, setAllowNegativeStock] = useState(false);
+  const [deleteReason, setDeleteReason] = useState('');
+
+  // Status notifications
+  const [successMsg, setSuccessMsg] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
     loadGrns();
@@ -39,6 +49,31 @@ export default function GrnList({ onNavigateToCreate }) {
     }
   };
 
+  const handleConfirmDelete = async () => {
+    if (!deletingGrn) return;
+    setIsDeleting(true);
+    setErrorMsg('');
+    try {
+      const res = await grnApi.delete(deletingGrn.id, {
+        allow_negative_stock: allowNegativeStock,
+        reason: deleteReason.trim() || 'Deleted by user from GRN List'
+      });
+      setSuccessMsg(isUrdu
+        ? `✓ رسید #${deletingGrn.grn_number} کامیابی سے منسوخ ہو گئی! انوینٹری اسٹاک خودکار کٹ گیا۔`
+        : `✓ GRN #${deletingGrn.grn_number} deleted successfully! Inventory stock automatically deducted.`
+      );
+      setDeletingGrn(null);
+      if (selectedGrn?.id === deletingGrn.id) setSelectedGrn(null);
+      await loadGrns();
+      setTimeout(() => setSuccessMsg(''), 5000);
+    } catch (err) {
+      console.error('Delete GRN error:', err);
+      setErrorMsg(err.message || (isUrdu ? 'GRN منسوخ کرنے میں خرابی پیش آئی' : 'Failed to delete GRN'));
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const filtered = grns.filter(g => {
     if (!search.trim()) return true;
     const q = search.toLowerCase();
@@ -50,6 +85,20 @@ export default function GrnList({ onNavigateToCreate }) {
   return (
     <div className="flex-1 w-full h-full overflow-y-auto bg-slate-100 p-4 select-text">
       <div className="max-w-7xl mx-auto space-y-4 pb-16">
+        {/* Notifications */}
+        {successMsg && (
+          <div className="p-3.5 bg-emerald-50 border border-emerald-300 rounded-2xl text-emerald-800 text-xs font-bold flex items-center space-x-2 shadow-xs">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{successMsg}</span>
+          </div>
+        )}
+        {errorMsg && (
+          <div className="p-3.5 bg-rose-50 border border-rose-300 rounded-2xl text-rose-800 text-xs font-bold flex items-center space-x-2 shadow-xs">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{errorMsg}</span>
+          </div>
+        )}
+
         {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
         <div className="flex items-center space-x-3">
@@ -150,17 +199,38 @@ export default function GrnList({ onNavigateToCreate }) {
                       </span>
                     </td>
                     <td className="py-3 px-3 text-center">
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleOpenDetail(g.id);
-                        }}
-                        title={t('grn_view_btn')}
-                        className="p-1 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
-                      >
-                        <Eye className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center justify-center gap-1" onClick={(e) => e.stopPropagation()}>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenDetail(g.id)}
+                          title={t('grn_view_btn')}
+                          className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer"
+                        >
+                          <Eye className="w-4 h-4" />
+                        </button>
+                        {onNavigateToEdit && (
+                          <button
+                            type="button"
+                            onClick={() => onNavigateToEdit(g.id)}
+                            title={isUrdu ? 'ترمیم کریں' : 'Edit GRN'}
+                            className="p-1.5 text-slate-500 hover:text-amber-600 hover:bg-amber-50 rounded-lg transition-colors cursor-pointer"
+                          >
+                            <Edit className="w-4 h-4" />
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDeleteReason('');
+                            setAllowNegativeStock(false);
+                            setDeletingGrn(g);
+                          }}
+                          title={isUrdu ? 'منسوخ / ڈیلیٹ کریں (اسٹاک خودکار کم ہو گا)' : 'Delete GRN (Auto deduct stock)'}
+                          className="p-1.5 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -247,13 +317,142 @@ export default function GrnList({ onNavigateToCreate }) {
                 </div>
               </div>
 
-              <div className="flex justify-end pt-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                <div className="flex items-center gap-2">
+                  {onNavigateToEdit && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const editId = selectedGrn.id;
+                        setSelectedGrn(null);
+                        onNavigateToEdit(editId);
+                      }}
+                      className="flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-xl transition-colors cursor-pointer text-xs shadow-xs"
+                    >
+                      <Edit className="w-3.5 h-3.5" />
+                      <span>{isUrdu ? 'اس رسید میں ترمیم کریں' : 'Edit This GRN'}</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const g = selectedGrn;
+                      setSelectedGrn(null);
+                      setDeleteReason('');
+                      setAllowNegativeStock(false);
+                      setDeletingGrn(g);
+                    }}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold rounded-xl border border-rose-200 transition-colors cursor-pointer text-xs"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>{isUrdu ? 'رسید منسوخ کریں (اسٹاک ریورس)' : 'Delete GRN (Reverse Stock)'}</span>
+                  </button>
+                </div>
                 <button
                   type="button"
                   onClick={() => setSelectedGrn(null)}
-                  className="px-5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors cursor-pointer"
+                  className="px-5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors cursor-pointer text-xs"
                 >
                   {t('grn_close_btn')}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal with Inventory Auto-Deduct Warning */}
+      {deletingGrn && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl border border-rose-200 w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="px-5 py-4 bg-rose-600 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-white" />
+                <h3 className="font-black text-sm">
+                  {isUrdu ? `رسید منسوخ / ڈیلیٹ کریں (${deletingGrn.grn_number})` : `Delete / Void GRN (${deletingGrn.grn_number})`}
+                </h3>
+              </div>
+              <button
+                onClick={() => setDeletingGrn(null)}
+                disabled={isDeleting}
+                className="text-white/80 hover:text-white p-1 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 text-xs">
+              <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl space-y-2">
+                <p className="font-bold text-rose-900">
+                  {isUrdu
+                    ? '⚠️ انتباہ: یہ رسید منسوخ کرنے سے درج ذیل تبدیلیاں خودکار لاگو ہوں گی:'
+                    : '⚠️ Warning: Deleting this GRN will automatically execute the following:'}
+                </p>
+                <ul className="list-disc list-inside space-y-1 text-rose-800">
+                  <li>
+                    {isUrdu
+                      ? `گودام / شیلف کے اسٹاک سے خریدی گئی کل تعداد (${deletingGrn.total_quantity_received} آئٹمز) خودکار کٹ جائے گی۔`
+                      : `Product inventory stock will be automatically deducted by received quantity (${deletingGrn.total_quantity_received} items).`}
+                  </li>
+                  <li>
+                    {isUrdu
+                      ? `سپلائر (${deletingGrn.supplier_name}) کا کھاتہ Rs. ${Number(deletingGrn.total_amount).toLocaleString()} سے ریورس ہو جائے گا۔`
+                      : `Supplier ledger balance will be reversed by Rs. ${Number(deletingGrn.total_amount).toLocaleString()}.`}
+                  </li>
+                </ul>
+              </div>
+
+              <div>
+                <label className="block text-slate-700 font-bold mb-1">
+                  {isUrdu ? 'منسوخی کی وجہ (اختیاری):' : 'Reason for cancellation (optional):'}
+                </label>
+                <input
+                  type="text"
+                  value={deleteReason}
+                  onChange={(e) => setDeleteReason(e.target.value)}
+                  placeholder={isUrdu ? 'مثلاً: غلط اندراج، مال واپس کیا گیا، وغیرہ' : 'e.g. Returned to vendor, wrong entry'}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs text-slate-900 focus:border-rose-500 focus:outline-hidden"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="allowNegStock"
+                  checked={allowNegativeStock}
+                  onChange={(e) => setAllowNegativeStock(e.target.checked)}
+                  className="w-4 h-4 text-rose-600 rounded border-slate-300 focus:ring-rose-500 cursor-pointer"
+                />
+                <label htmlFor="allowNegStock" className="text-slate-700 font-semibold cursor-pointer">
+                  {isUrdu
+                    ? 'اگر مال پہلے ہی فروخت ہو چکا ہو تب بھی اسٹاک منفی (Negative) میں جانے دیں'
+                    : 'Force delete even if stock goes negative (items already sold)'}
+                </label>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setDeletingGrn(null)}
+                  disabled={isDeleting}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-colors cursor-pointer"
+                >
+                  {isUrdu ? 'منسوخ نہ کریں' : 'Cancel'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDelete}
+                  disabled={isDeleting}
+                  className="flex items-center gap-1.5 px-5 py-2 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl transition-all shadow-md shadow-rose-600/20 cursor-pointer disabled:opacity-50"
+                >
+                  {isDeleting ? (
+                    <span>{isUrdu ? 'اسٹاک کٹ رہا ہے...' : 'Deducting Stock...'}</span>
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4" />
+                      <span>{isUrdu ? 'ہاں، رسید منسوخ اور اسٹاک کم کریں' : 'Yes, Delete & Deduct Stock'}</span>
+                    </>
+                  )}
                 </button>
               </div>
             </div>

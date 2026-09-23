@@ -33,6 +33,7 @@ export default function App() {
   const [isShiftModalOpen, setIsShiftModalOpen] = useState(false);
   const [lowStockCount, setLowStockCount] = useState(0);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [editGrnId, setEditGrnId] = useState(null);
 
   // Secret access triggers for Audit Trail (Completely hidden from client)
   useEffect(() => {
@@ -124,12 +125,23 @@ export default function App() {
           )}
           {(activeTabSafe === 'grn' || activeTabSafe === 'purchases') && (
             <GrnList
-              onNavigateToCreate={() => setCurrentTab('create_grn')}
+              onNavigateToCreate={() => {
+                setEditGrnId(null);
+                setCurrentTab('create_grn');
+              }}
+              onNavigateToEdit={(id) => {
+                setEditGrnId(id);
+                setCurrentTab('create_grn');
+              }}
             />
           )}
           {activeTabSafe === 'create_grn' && (
             <CreateGrn
-              onNavigateToList={() => setCurrentTab('grn')}
+              editGrnId={editGrnId}
+              onNavigateToList={() => {
+                setEditGrnId(null);
+                setCurrentTab('grn');
+              }}
             />
           )}
           {activeTabSafe === 'purchase_return' && (
