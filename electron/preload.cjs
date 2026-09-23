@@ -12,5 +12,4 @@ const apiBridge = {
 };
 
 contextBridge.exposeInMainWorld('electronAPI', apiBridge);
-contextBridge.exposeInMainWorld('api', apiBridge);
 
