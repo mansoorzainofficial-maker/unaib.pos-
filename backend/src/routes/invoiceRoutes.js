@@ -26,6 +26,9 @@ router.delete('/meta/customers/:id', authRequired, invCtrl.deleteCustomer);
 // Void / Cancel an invoice (restores stock, frees serials, adjusts khata)
 router.post('/:id/void', authRequired, invCtrl.voidInvoice);
 
+// Update / Edit an existing invoice (delta stock & khata rebalancing)
+router.put('/:id', authFlexible, invCtrl.updateInvoice);
+
 // Permanently delete an invoice
 router.delete('/:id', authRequired, invCtrl.deleteInvoice);
 

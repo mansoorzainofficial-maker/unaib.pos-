@@ -1012,8 +1012,419 @@ async function deleteInvoice(req, res) {
   }
 }
 
+/**
+ * Update / Edit an existing Sales Invoice
+ * Recalculates line items, adjusts product stock deltas, updates customer ledger & cash drawer
+ * PUT /api/invoices/:id
+ */
+async function updateInvoice(req, res) {
+  try {
+    const invoiceId = Number(req.params.id);
+    if (!invoiceId) {
+      return res.status(400).json({ success: false, message: 'Invalid invoice ID' });
+    }
+
+    const {
+      customer_id,
+      customer_name,
+      customer_phone,
+      items, // Array of { product_id, quantity, unit_price, cost_price, serial_numbers }
+      discount_type,
+      discount_value,
+      tax_rate,
+      shipping_cost,
+      shipping_notes,
+      extra_charges,
+      payment_method,
+      paid_amount,
+      notes,
+      show_previous_balance
+    } = req.body;
+
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ success: false, message: 'Cart items cannot be empty (بل میں کم از کم ایک آئٹم ہونا ضروری ہے)' });
+    }
+
+    const cashierId = req.user ? req.user.id : 1;
+
+    const result = await transaction(async ({ query: txQuery, get: txGet, run: txRun }) => {
+      // 1. Fetch existing invoice
+      const existingInvoice = await txGet('SELECT * FROM invoices WHERE id = ?', [invoiceId]);
+      if (!existingInvoice) {
+        throw new Error('Invoice not found (بل نہیں ملا)');
+      }
+
+      // 2. Reject if invoice is voided or cancelled
+      if (existingInvoice.voided_at || existingInvoice.status === 'void' || existingInvoice.status === 'cancelled') {
+        throw new Error('منسوخ شدہ بل میں ترمیم نہیں کی جا سکتی (Cannot edit a voided or cancelled invoice)');
+      }
+
+      // 3. Fetch existing line items
+      const oldItems = await txQuery('SELECT * FROM invoice_items WHERE invoice_id = ?', [invoiceId]);
+
+      // Calculate old quantity map per product: { [product_id]: total_old_qty }
+      const oldQtyMap = {};
+      for (const it of oldItems) {
+        const pid = Number(it.product_id);
+        oldQtyMap[pid] = (oldQtyMap[pid] || 0) + Number(it.quantity);
+      }
+
+      function getItemQty(it) {
+        return Number(it.quantity !== undefined ? it.quantity : (it.qty !== undefined ? it.qty : 1));
+      }
+
+      // Calculate new quantity map per product
+      const newQtyMap = {};
+      for (const it of items) {
+        const pid = Number(it.product_id);
+        const qty = getItemQty(it);
+        if (qty <= 0) {
+          throw new Error('Quantity must be greater than 0 (تعداد صفر سے زیادہ ہونی چاہیے)');
+        }
+        newQtyMap[pid] = (newQtyMap[pid] || 0) + qty;
+      }
+
+      // 4. Validate stock availability for all products with net positive delta
+      // delta = newQty - oldQty. If delta > 0, we need delta additional stock from warehouse!
+      const allProductIds = Array.from(new Set([...Object.keys(oldQtyMap), ...Object.keys(newQtyMap)].map(Number)));
+
+      for (const pid of allProductIds) {
+        const oldQty = oldQtyMap[pid] || 0;
+        const newQty = newQtyMap[pid] || 0;
+        const delta = newQty - oldQty;
+
+        if (delta > 0) {
+          const product = await txGet('SELECT id, name, stock_quantity FROM products WHERE id = ?', [pid]);
+          if (!product) {
+            throw new Error(`Product ID ${pid} not found`);
+          }
+          const availableStock = Number(product.stock_quantity) || 0;
+          if (availableStock < delta) {
+            throw new Error(`اسٹاک کی کمی: پروڈکٹ "${product.name}" کا موجودہ اسٹاک صرف ${availableStock} ہے، جبکہ ترمیم کے بعد ${delta} مزید آئٹم درکار ہیں (مجموعی ضرورت: ${newQty})۔`);
+          }
+        }
+      }
+
+      // 5. Process new items and calculate Subtotal
+      let subtotal = 0;
+      const processedItems = [];
+
+      for (const item of items) {
+        const pid = Number(item.product_id);
+        const product = await txGet('SELECT * FROM products WHERE id = ?', [pid]);
+        if (!product) {
+          throw new Error(`Product not found with ID ${pid}`);
+        }
+
+        const qty = getItemQty(item);
+        const unitPrice = item.unit_price !== undefined ? Number(item.unit_price) : product.sale_price;
+        if (isNaN(unitPrice) || unitPrice < 0) {
+          throw new Error(`Invalid price for product "${product.name}". Unit price cannot be negative.`);
+        }
+        const lineTotal = Math.round(unitPrice * qty * 100) / 100;
+        subtotal += lineTotal;
+
+        processedItems.push({
+          product,
+          qty,
+          unitPrice,
+          lineTotal,
+          costPrice: item.cost_price !== undefined ? Number(item.cost_price) : (product.cost_price || 0),
+          warrantyMonths: product.warranty_months || 0,
+          serials: Array.isArray(item.serial_numbers) ? item.serial_numbers : []
+        });
+      }
+
+      // 6. Calculate Discounts, Taxes, Shipping, and Grand Total
+      let discAmount = 0;
+      const discVal = Number(discount_value) || 0;
+      if (discVal < 0) throw new Error('Discount value cannot be negative');
+
+      if (discount_type === 'percentage') {
+        discAmount = (subtotal * discVal) / 100;
+      } else {
+        discAmount = discVal;
+      }
+      discAmount = Math.min(discAmount, subtotal);
+      discAmount = Math.round(discAmount * 100) / 100;
+
+      const taxableAmount = Math.round((subtotal - discAmount) * 100) / 100;
+      const tRate = Number(tax_rate) || 0;
+      if (tRate < 0) throw new Error('Tax rate cannot be negative');
+      const taxAmount = Math.round(((taxableAmount * tRate) / 100) * 100) / 100;
+
+      const shippingCost = Math.max(0, Number(shipping_cost) || 0);
+      const shippingNotes = (shipping_notes && typeof shipping_notes === 'string') ? shipping_notes.trim() : null;
+      const extraCharges = Math.max(0, Number(extra_charges) || 0);
+      const grandTotal = Math.round((taxableAmount + taxAmount + shippingCost + extraCharges) * 100) / 100;
+
+      const paid = (paid_amount !== undefined && paid_amount !== null && paid_amount !== '')
+        ? Math.round(Number(paid_amount) * 100) / 100
+        : grandTotal;
+
+      // 7. Resolve Customer & Khata logic
+      let customerId = customer_id ? Number(customer_id) : (existingInvoice.customer_id || null);
+      let cleanName = customer_name ? customer_name.trim() : (existingInvoice.customer_name || 'عام واک ان گاہک');
+      let cleanPhone = customer_phone ? customer_phone.trim() : (existingInvoice.customer_phone || null);
+
+      if (customerId) {
+        const custRecord = await txGet('SELECT id, name, phone FROM customers WHERE id = ?', [customerId]);
+        if (custRecord) {
+          if (!cleanName || cleanName === 'عام واک ان گاہک') cleanName = custRecord.name;
+        } else {
+          customerId = null;
+        }
+      }
+
+      let changeAmount = 0;
+      let balanceDue = 0;
+      if (customerId) {
+        if (paid >= grandTotal) {
+          balanceDue = 0;
+          changeAmount = 0;
+        } else {
+          balanceDue = Math.round((grandTotal - paid) * 100) / 100;
+          changeAmount = 0;
+        }
+      } else {
+        changeAmount = Math.max(0, Math.round((paid - grandTotal) * 100) / 100);
+        balanceDue = Math.max(0, Math.round((grandTotal - paid) * 100) / 100);
+      }
+
+      // 8. Apply Stock Adjustments for each product
+      // delta = newQty - oldQty
+      // delta > 0: stock_quantity = stock_quantity - delta (further reduction)
+      // delta < 0: stock_quantity = stock_quantity - (-|delta|) = stock_quantity + |delta| (stock restored)
+      for (const pid of allProductIds) {
+        const delta = (newQtyMap[pid] || 0) - (oldQtyMap[pid] || 0);
+        if (delta !== 0) {
+          await txRun('UPDATE products SET stock_quantity = stock_quantity - ? WHERE id = ?', [delta, pid]);
+        }
+      }
+
+      // 9. Update Line Items: delete old items and insert updated items
+      await txRun('DELETE FROM invoice_items WHERE invoice_id = ?', [invoiceId]);
+
+      for (const item of processedItems) {
+        await txRun(`
+          INSERT INTO invoice_items (
+            invoice_id, product_id, product_name, cost_price,
+            unit_price, quantity, total_price, warranty_months
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+          invoiceId,
+          item.product.id,
+          item.product.name,
+          item.costPrice,
+          item.unitPrice,
+          item.qty,
+          item.lineTotal,
+          item.warrantyMonths
+        ]);
+      }
+
+      // 10. Customer Khata & Ledger Adjustments
+      const oldGrandTotal = Number(existingInvoice.grand_total) || 0;
+      const oldPaidAmount = Number(existingInvoice.paid_amount) || 0;
+      const oldNetDelta = Math.round((oldGrandTotal - oldPaidAmount) * 100) / 100;
+      const newNetDelta = Math.round((grandTotal - paid) * 100) / 100;
+
+      const oldCustomerId = existingInvoice.customer_id ? Number(existingInvoice.customer_id) : null;
+      let newCustomerBalance = 0;
+
+      if (oldCustomerId && oldCustomerId === customerId) {
+        // Same customer: balance adjusts by (newNetDelta - oldNetDelta)
+        const balanceChange = Math.round((newNetDelta - oldNetDelta) * 100) / 100;
+        const spentChange = Math.round((grandTotal - oldGrandTotal) * 100) / 100;
+
+        const cust = await txGet('SELECT id, current_balance, total_spent FROM customers WHERE id = ?', [customerId]);
+        if (cust) {
+          newCustomerBalance = Math.round(((Number(cust.current_balance) || 0) + balanceChange) * 100) / 100;
+          const newTotalSpent = Math.max(0, Math.round(((Number(cust.total_spent) || 0) + spentChange) * 100) / 100);
+          await txRun('UPDATE customers SET current_balance = ?, total_spent = ? WHERE id = ?', [
+            newCustomerBalance,
+            newTotalSpent,
+            customerId
+          ]);
+
+          // Insert audit adjustment entry in ledger
+          await txRun(`
+            INSERT INTO ledger_entries (
+              party_type, party_id, entry_type, reference_id, reference_no,
+              debit, credit, account_id, description, entry_date
+            ) VALUES ('client', ?, 'invoice_edit', ?, ?, ?, ?, ?, ?, CURRENT_DATE)
+          `, [
+            customerId,
+            invoiceId,
+            existingInvoice.invoice_number,
+            grandTotal,
+            paid,
+            (payment_method === 'cash' ? 1 : null),
+            `ترمیم شدہ بل (Invoice Edit) #${existingInvoice.invoice_number} (پہلے: Rs. ${oldGrandTotal}, نیا: Rs. ${grandTotal})`
+          ]);
+        }
+      } else {
+        // Customer was changed or removed/added
+        if (oldCustomerId) {
+          // Revert old customer's net invoice debt & total spent
+          const oldCust = await txGet('SELECT id, current_balance, total_spent FROM customers WHERE id = ?', [oldCustomerId]);
+          if (oldCust) {
+            const revertedBal = Math.round(((Number(oldCust.current_balance) || 0) - oldNetDelta) * 100) / 100;
+            const revertedSpent = Math.max(0, Math.round(((Number(oldCust.total_spent) || 0) - oldGrandTotal) * 100) / 100);
+            await txRun('UPDATE customers SET current_balance = ?, total_spent = ? WHERE id = ?', [
+              revertedBal,
+              revertedSpent,
+              oldCustomerId
+            ]);
+            await txRun(`
+              INSERT INTO ledger_entries (
+                party_type, party_id, entry_type, reference_id, reference_no,
+                debit, credit, account_id, description, entry_date
+              ) VALUES ('client', ?, 'invoice_edit_reversal', ?, ?, ?, ?, ?, ?, CURRENT_DATE)
+            `, [
+              oldCustomerId,
+              invoiceId,
+              existingInvoice.invoice_number,
+              oldPaidAmount,
+              oldGrandTotal,
+              1,
+              `بل کی گاہک تبدیلی منسوخی (Reversal) #${existingInvoice.invoice_number}`
+            ]);
+          }
+        }
+
+        if (customerId) {
+          // Apply new net delta to new customer
+          const newCust = await txGet('SELECT id, current_balance, total_spent FROM customers WHERE id = ?', [customerId]);
+          if (newCust) {
+            newCustomerBalance = Math.round(((Number(newCust.current_balance) || 0) + newNetDelta) * 100) / 100;
+            const newSpent = Math.round(((Number(newCust.total_spent) || 0) + grandTotal) * 100) / 100;
+            await txRun('UPDATE customers SET current_balance = ?, total_spent = ? WHERE id = ?', [
+              newCustomerBalance,
+              newSpent,
+              customerId
+            ]);
+            await txRun(`
+              INSERT INTO ledger_entries (
+                party_type, party_id, entry_type, reference_id, reference_no,
+                debit, credit, account_id, description, entry_date
+              ) VALUES ('client', ?, 'sale', ?, ?, ?, ?, ?, ?, CURRENT_DATE)
+            `, [
+              customerId,
+              invoiceId,
+              existingInvoice.invoice_number,
+              grandTotal,
+              paid,
+              (payment_method === 'cash' ? 1 : null),
+              `بل ٹرانسفر (Transferred Bill) #${existingInvoice.invoice_number}`
+            ]);
+          }
+        }
+      }
+
+      // 11. Update Cash Drawer (if payment method was/is cash)
+      const oldPayMethod = existingInvoice.payment_method;
+      const newPayMethod = payment_method || oldPayMethod || 'cash';
+
+      const oldCashCollected = oldPayMethod === 'cash' ? (existingInvoice.customer_id ? oldPaidAmount : Math.min(oldPaidAmount, oldGrandTotal)) : 0;
+      const newCashCollected = newPayMethod === 'cash' ? (customerId ? paid : Math.min(paid, grandTotal)) : 0;
+      const cashDiff = Math.round((newCashCollected - oldCashCollected) * 100) / 100;
+
+      if (cashDiff !== 0) {
+        await txRun(`
+          UPDATE cash_drawers
+          SET cash_sales = CASE WHEN cash_sales + ? < 0 THEN 0 ELSE cash_sales + ? END,
+              expected_closing_cash = CASE WHEN expected_closing_cash + ? < 0 THEN 0 ELSE expected_closing_cash + ? END
+          WHERE status = 'open' AND (cashier_id = ? OR id = (SELECT id FROM cash_drawers WHERE status = 'open' ORDER BY id DESC LIMIT 1))
+        `, [cashDiff, cashDiff, cashDiff, cashDiff, cashierId]);
+      }
+
+      // 12. Update Invoices Table
+      const showPrevBal = show_previous_balance !== undefined ? (show_previous_balance ? 1 : 0) : Number(existingInvoice.show_previous_balance || 1);
+
+      await txRun(`
+        UPDATE invoices SET
+          customer_id = ?,
+          customer_name = ?,
+          customer_phone = ?,
+          subtotal = ?,
+          discount_type = ?,
+          discount_value = ?,
+          discount_amount = ?,
+          tax_rate = ?,
+          tax_amount = ?,
+          grand_total = ?,
+          shipping_cost = ?,
+          shipping_notes = ?,
+          extra_charges = ?,
+          paid_amount = ?,
+          change_amount = ?,
+          balance_due = ?,
+          payment_method = ?,
+          notes = ?,
+          new_customer_balance = ?,
+          show_previous_balance = ?
+        WHERE id = ?
+      `, [
+        customerId,
+        cleanName,
+        cleanPhone,
+        subtotal,
+        discount_type || 'amount',
+        discVal,
+        discAmount,
+        tRate,
+        taxAmount,
+        grandTotal,
+        shippingCost,
+        shippingNotes,
+        extraCharges,
+        paid,
+        changeAmount,
+        balanceDue,
+        newPayMethod,
+        notes !== undefined ? notes : existingInvoice.notes,
+        newCustomerBalance,
+        showPrevBal,
+        invoiceId
+      ]);
+
+      return {
+        invoiceId,
+        invoice_number: existingInvoice.invoice_number,
+        grandTotal,
+        paid,
+        balanceDue
+      };
+    });
+
+    await logActivity({
+      userId: cashierId,
+      username: req.user ? req.user.username : 'Cashier/Admin',
+      action: 'invoice_edit',
+      description: `بل میں ترمیم #${result.invoice_number} - نیا کل: Rs. ${result.grandTotal}`
+    });
+
+    // Fetch updated invoice
+    const updatedInvoice = await getFullInvoiceDetails(invoiceId);
+
+    return res.json({
+      success: true,
+      message: `بل نمبر #${result.invoice_number} کامیابی سے اپڈیٹ ہو گیا۔ اسٹاک اور کھاتہ خودکار ایڈجسٹ ہو گئے!`,
+      invoice: updatedInvoice
+    });
+  } catch (error) {
+    console.error('Invoice update failed:', error);
+    return res.status(400).json({
+      success: false,
+      message: error.message || 'بل میں ترمیم محفوظ کرنے میں خرابی پیش آئی'
+    });
+  }
+}
+
 module.exports = {
   createInvoice,
+  updateInvoice,
   getInvoices,
   getInvoiceDetails,
   getFullInvoiceDetails,

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
 import ThermalReceipt from '../components/ThermalReceipt';
 import Modal from '../components/Modal';
-import { Receipt, Search, Printer, Calendar, User, Eye, Ban, AlertTriangle, CheckCircle, RefreshCw, Trash2 } from 'lucide-react';
+import { Receipt, Search, Printer, Calendar, User, Eye, Ban, AlertTriangle, CheckCircle, RefreshCw, Trash2, Edit3, Plus, Minus, Save, ShoppingBag, X } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 
 export default function InvoicesHistoryScreen() {
@@ -20,6 +20,25 @@ export default function InvoicesHistoryScreen() {
   const [voidReason, setVoidReason] = useState('');
   const [isVoiding, setIsVoiding] = useState(false);
   const [feedbackMsg, setFeedbackMsg] = useState(null);
+
+  // Edit Invoice state
+  const [editingInvoice, setEditingInvoice] = useState(null);
+  const [editItems, setEditItems] = useState([]);
+  const [editDiscountType, setEditDiscountType] = useState('amount');
+  const [editDiscountValue, setEditDiscountValue] = useState(0);
+  const [editTaxRate, setEditTaxRate] = useState(0);
+  const [editShippingCost, setEditShippingCost] = useState(0);
+  const [editShippingNotes, setEditShippingNotes] = useState('');
+  const [editExtraCharges, setEditExtraCharges] = useState(0);
+  const [editPaymentMethod, setEditPaymentMethod] = useState('cash');
+  const [editPaidAmount, setEditPaidAmount] = useState(0);
+  const [editNotes, setEditNotes] = useState('');
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [editError, setEditError] = useState(null);
+
+  // Product quick-search inside Edit Modal
+  const [allProducts, setAllProducts] = useState([]);
+  const [productSearchQuery, setProductSearchQuery] = useState('');
 
   const formatCustName = (name) => {
     if (!name) return isUrdu ? 'عام واک ان گاہک' : 'Walk-in Customer';
@@ -128,6 +147,184 @@ export default function InvoicesHistoryScreen() {
       });
     }
   };
+
+  // Open Edit Modal and load full invoice items
+  const handleOpenEditModal = async (inv) => {
+    try {
+      setLoading(true);
+      const res = await api.invoices.getDetails(inv.invoice_number || inv.id);
+      if (!res.success || !res.invoice) {
+        alert(isUrdu ? 'بل کی تفصیلات لوڈ نہ ہو سکیں' : 'Could not load invoice details');
+        return;
+      }
+      const full = res.invoice;
+      setEditingInvoice(full);
+      setEditItems((full.items || []).map(it => ({
+        product_id: it.product_id,
+        product_name: it.product_name,
+        barcode: it.barcode || '',
+        unit_price: Number(it.unit_price) || 0,
+        quantity: Number(it.quantity) || 1,
+        cost_price: Number(it.cost_price) || 0,
+        warranty_months: Number(it.warranty_months) || 0,
+        serial_numbers: it.serial_numbers || []
+      })));
+      setEditDiscountType(full.discount_type || 'amount');
+      setEditDiscountValue(Number(full.discount_value) || 0);
+      setEditTaxRate(Number(full.tax_rate) || 0);
+      setEditShippingCost(Number(full.shipping_cost) || 0);
+      setEditShippingNotes(full.shipping_notes || '');
+      setEditExtraCharges(Number(full.extra_charges) || 0);
+      setEditPaymentMethod(full.payment_method || 'cash');
+      setEditPaidAmount(Number(full.paid_amount) || 0);
+      setEditNotes(full.notes || '');
+      setEditError(null);
+      setProductSearchQuery('');
+
+      // Preload product catalog for quick-add if not loaded
+      if (allProducts.length === 0) {
+        try {
+          const pRes = await api.products.getAll({ limit: 500 });
+          if (pRes && pRes.products) setAllProducts(pRes.products);
+        } catch (e) {
+          console.warn('Could not preload products for edit', e);
+        }
+      }
+    } catch (err) {
+      console.error(err);
+      alert(isUrdu ? 'بل میں ترمیم کے لیے ڈیٹا لوڈ نہ ہو سکا' : 'Failed to load invoice for editing');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleItemQtyChange = (index, deltaOrVal) => {
+    setEditItems(prev => {
+      const updated = [...prev];
+      let newQty;
+      if (typeof deltaOrVal === 'number' && (deltaOrVal === 1 || deltaOrVal === -1)) {
+        newQty = (Number(updated[index].quantity) || 1) + deltaOrVal;
+      } else {
+        newQty = Number(deltaOrVal);
+      }
+      if (isNaN(newQty) || newQty < 1) newQty = 1;
+      updated[index] = { ...updated[index], quantity: newQty };
+      return updated;
+    });
+  };
+
+  const handleItemPriceChange = (index, newPrice) => {
+    setEditItems(prev => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], unit_price: Math.max(0, Number(newPrice) || 0) };
+      return updated;
+    });
+  };
+
+  const handleRemoveItem = (index) => {
+    setEditItems(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleAddProductToInvoice = (prod) => {
+    setEditItems(prev => {
+      const idx = prev.findIndex(it => Number(it.product_id) === Number(prod.id));
+      if (idx >= 0) {
+        const updated = [...prev];
+        updated[idx] = { ...updated[idx], quantity: (Number(updated[idx].quantity) || 1) + 1 };
+        return updated;
+      } else {
+        return [...prev, {
+          product_id: prod.id,
+          product_name: prod.name,
+          barcode: prod.barcode || '',
+          unit_price: Number(prod.sale_price) || 0,
+          quantity: 1,
+          cost_price: Number(prod.cost_price) || 0,
+          warranty_months: Number(prod.warranty_months) || 0,
+          serial_numbers: []
+        }];
+      }
+    });
+    setProductSearchQuery('');
+  };
+
+  const handleSaveEdit = async (e) => {
+    e.preventDefault();
+    if (!editingInvoice) return;
+    if (editItems.length === 0) {
+      setEditError(isUrdu ? 'بل میں کم از کم ایک پروڈکٹ ہونا ضروری ہے' : 'Invoice must have at least one product');
+      return;
+    }
+
+    setIsSavingEdit(true);
+    setEditError(null);
+
+    try {
+      const payload = {
+        customer_id: editingInvoice.customer_id,
+        customer_name: editingInvoice.customer_name,
+        customer_phone: editingInvoice.customer_phone,
+        items: editItems.map(it => ({
+          product_id: it.product_id,
+          quantity: Number(it.quantity) || 1,
+          unit_price: Number(it.unit_price) || 0,
+          cost_price: it.cost_price,
+          warranty_months: it.warranty_months,
+          serial_numbers: it.serial_numbers || []
+        })),
+        discount_type: editDiscountType,
+        discount_value: editDiscountValue,
+        tax_rate: editTaxRate,
+        shipping_cost: editShippingCost,
+        shipping_notes: editShippingNotes,
+        extra_charges: editExtraCharges,
+        payment_method: editPaymentMethod,
+        paid_amount: editPaidAmount,
+        notes: editNotes,
+        show_previous_balance: editingInvoice.show_previous_balance
+      };
+
+      const res = await api.invoices.update(editingInvoice.id, payload);
+      if (res.success) {
+        setFeedbackMsg({
+          type: 'success',
+          text: isUrdu
+            ? `بل نمبر #${editingInvoice.invoice_number} میں ترمیم کامیابی سے محفوظ ہو گئی۔ اسٹاک اور کھاتہ خودکار ایڈجسٹ ہو گئے!`
+            : `Invoice #${editingInvoice.invoice_number} updated successfully. Stock & Khata rebalanced!`
+        });
+        setEditingInvoice(null);
+        loadInvoices();
+        setTimeout(() => setFeedbackMsg(null), 5000);
+      } else {
+        setEditError(res.message || (isUrdu ? 'ترمیم محفوظ کرنے میں خرابی ہوئی' : 'Failed to update invoice'));
+      }
+    } catch (err) {
+      setEditError(err.message || (isUrdu ? 'ترمیم محفوظ کرنے میں خرابی ہوئی' : 'Failed to update invoice'));
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  // Live totals inside Edit Invoice Modal
+  const editSubtotal = editItems.reduce((acc, it) => acc + (Number(it.unit_price) || 0) * (Number(it.quantity) || 1), 0);
+  let editDiscountAmount = 0;
+  if (editDiscountType === 'percentage') {
+    editDiscountAmount = (editSubtotal * (Number(editDiscountValue) || 0)) / 100;
+  } else {
+    editDiscountAmount = Number(editDiscountValue) || 0;
+  }
+  editDiscountAmount = Math.min(editDiscountAmount, editSubtotal);
+  const editTaxable = editSubtotal - editDiscountAmount;
+  const editTaxAmount = (editTaxable * (Number(editTaxRate) || 0)) / 100;
+  const editGrandTotal = Math.round((editTaxable + editTaxAmount + (Number(editShippingCost) || 0) + (Number(editExtraCharges) || 0)) * 100) / 100;
+  const editBalanceDue = Math.max(0, Math.round((editGrandTotal - (Number(editPaidAmount) || 0)) * 100) / 100);
+
+  const filteredProducts = productSearchQuery.trim()
+    ? allProducts.filter(p =>
+        (p.name && p.name.toLowerCase().includes(productSearchQuery.toLowerCase())) ||
+        (p.barcode && p.barcode.toLowerCase().includes(productSearchQuery.toLowerCase()))
+      ).slice(0, 8)
+    : [];
 
   // Check whether invoice is voided or cancelled
   const isInvoiceVoid = (inv) => inv?.status === 'void' || inv?.status === 'cancelled' || !!inv?.voided_at;
@@ -359,6 +556,17 @@ export default function InvoicesHistoryScreen() {
 
                         {!isVoid && (
                           <button
+                            onClick={() => handleOpenEditModal(inv)}
+                            className="inline-flex items-center space-x-1 px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded text-xs font-semibold transition-colors cursor-pointer"
+                            title={isUrdu ? 'یہ بل تبدیل / ایڈٹ کریں (اسٹاک اور کھاتہ خودکار ایڈجسٹ ہوگا)' : 'Edit this Bill (Stock & Khata Auto-Adjusts)'}
+                          >
+                            <Edit3 className="w-3.5 h-3.5" />
+                            <span>{isUrdu ? 'ترمیم' : 'Edit'}</span>
+                          </button>
+                        )}
+
+                        {!isVoid && (
+                          <button
                             onClick={() => {
                               setInvoiceToVoid(inv);
                               setVoidReason('');
@@ -488,6 +696,361 @@ export default function InvoicesHistoryScreen() {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* EDIT INVOICE MODAL */}
+      <Modal
+        isOpen={!!editingInvoice}
+        onClose={() => setEditingInvoice(null)}
+        title={isUrdu ? `بل میں ترمیم (Edit Invoice): ${editingInvoice?.invoice_number}` : `Edit Invoice: ${editingInvoice?.invoice_number}`}
+        maxWidth="max-w-4xl"
+      >
+        {editingInvoice && (
+          <form onSubmit={handleSaveEdit} className="space-y-4">
+            {/* Informational Guidance Banner */}
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl flex items-start gap-2.5 text-xs text-blue-900">
+              <Edit3 className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+              <div className="space-y-0.5">
+                <span className="font-bold text-blue-800">
+                  {isUrdu ? 'خودکار اسٹاک اور کھاتہ ایڈجسٹمنٹ' : 'Automatic Stock & Khata Adjustments'}
+                </span>
+                <p className="text-[11px] text-blue-700 leading-relaxed">
+                  {isUrdu
+                    ? 'بل میں کسی بھی پروڈکٹ کی تعداد بڑھانے پر اسٹاک سے مزید کمی ہوگی اور گھٹانے پر مال گودام میں خودکار واپس ہوگا۔ گاہک کا کھاتہ/ادھار بھی نئے ٹوٹل کے مطابق اپڈیٹ ہو جائے گا۔'
+                    : 'Modifying quantities will automatically adjust product warehouse stock (deduct if increased, restore if decreased) and rebalance customer ledger balance.'}
+                </p>
+              </div>
+            </div>
+
+            {/* Error Banner */}
+            {editError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center gap-2 text-xs font-semibold text-rose-800">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{editError}</span>
+              </div>
+            )}
+
+            {/* Customer & Payment Info Bar */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs">
+              <div>
+                <span className="text-slate-500 block text-[11px]">{isUrdu ? 'گاہک:' : 'Customer:'}</span>
+                <span className="font-bold text-slate-900 text-xs">
+                  {formatCustName(editingInvoice.customer_name)}
+                </span>
+                {editingInvoice.customer_phone && (
+                  <span className="text-slate-500 font-mono text-[10px] block">
+                    {editingInvoice.customer_phone}
+                  </span>
+                )}
+              </div>
+
+              <div>
+                <label className="text-slate-500 block text-[11px] mb-1 font-semibold">
+                  {isUrdu ? 'طریقہ ادائیگی:' : 'Payment Method:'}
+                </label>
+                <select
+                  value={editPaymentMethod}
+                  onChange={(e) => setEditPaymentMethod(e.target.value)}
+                  className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:outline-hidden focus:border-blue-500"
+                >
+                  <option value="cash">{isUrdu ? '💵 نقد (Cash)' : 'Cash'}</option>
+                  <option value="card">{isUrdu ? '💳 کارڈ (Card)' : 'Card'}</option>
+                  <option value="bank">{isUrdu ? '🏦 آن لائن / بینک (Bank)' : 'Bank'}</option>
+                  <option value="credit">{isUrdu ? '📝 ادھار کھاتہ (Khata/Udhar)' : 'Khata / Credit'}</option>
+                </select>
+              </div>
+
+              <div>
+                <span className="text-slate-500 block text-[11px]">{isUrdu ? 'کیشئر:' : 'Cashier:'}</span>
+                <span className="font-semibold text-slate-800 text-xs">
+                  {editingInvoice.cashier_name || 'Terminal'}
+                </span>
+                <span className="text-slate-400 font-mono text-[10px] block">
+                  {new Date(editingInvoice.created_at).toLocaleDateString()}
+                </span>
+              </div>
+            </div>
+
+            {/* Add Product Search Input */}
+            <div className="relative">
+              <div className="relative">
+                <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder={isUrdu ? 'بل میں مزید پروڈکٹ شامل کرنے کے لیے نام یا بارکوڈ لکھیں...' : 'Search by name or barcode to add product...'}
+                  value={productSearchQuery}
+                  onChange={(e) => setProductSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-hidden focus:border-blue-500"
+                />
+              </div>
+
+              {filteredProducts.length > 0 && (
+                <div className="absolute z-20 left-0 right-0 mt-1 bg-white border border-slate-200 rounded-xl shadow-lg max-h-48 overflow-y-auto divide-y divide-slate-100">
+                  {filteredProducts.map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => handleAddProductToInvoice(p)}
+                      className="w-full px-3 py-2 text-left hover:bg-blue-50 flex items-center justify-between text-xs transition-colors cursor-pointer"
+                    >
+                      <div>
+                        <div className="font-bold text-slate-900">{p.name}</div>
+                        <div className="text-[10px] text-slate-400 font-mono">
+                          {p.barcode || 'No Barcode'} • {isUrdu ? 'موجودہ اسٹاک: ' : 'Stock: '}{p.stock_quantity}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-mono font-bold text-emerald-700">Rs. {Number(p.sale_price).toLocaleString()}</div>
+                        <span className="text-[10px] font-semibold text-blue-600 flex items-center gap-0.5 justify-end">
+                          <Plus className="w-3 h-3" /> {isUrdu ? 'شامل کریں' : 'Add'}
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Items Table */}
+            <div className="border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 text-slate-700 font-bold uppercase text-[10px] border-b border-slate-200">
+                  <tr>
+                    <th className="py-2 px-3">{isUrdu ? 'آئٹم' : 'Item'}</th>
+                    <th className="py-2 px-2 text-center w-28">{isUrdu ? 'قیمت فی عدد' : 'Unit Price'}</th>
+                    <th className="py-2 px-2 text-center w-36">{isUrdu ? 'تعداد (Qty)' : 'Quantity'}</th>
+                    <th className="py-2 px-2 text-right w-28">{isUrdu ? 'کل رقم' : 'Line Total'}</th>
+                    <th className="py-2 pr-3 text-center w-12">{isUrdu ? 'ہٹائیں' : 'Del'}</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {editItems.length === 0 ? (
+                    <tr>
+                      <td colSpan="5" className="py-6 text-center text-slate-400 font-medium">
+                        {isUrdu ? 'بل میں کوئی پروڈکٹ نہیں ہے۔ اوپر سے شامل کریں۔' : 'No items in invoice. Search above to add.'}
+                      </td>
+                    </tr>
+                  ) : (
+                    editItems.map((item, idx) => {
+                      const lineTotal = (Number(item.unit_price) || 0) * (Number(item.quantity) || 1);
+                      return (
+                        <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="py-2.5 px-3">
+                            <div className="font-bold text-slate-900">{item.product_name}</div>
+                            {item.barcode && <div className="text-[10px] text-slate-400 font-mono">{item.barcode}</div>}
+                          </td>
+                          <td className="py-2.5 px-2 text-center">
+                            <div className="inline-flex items-center">
+                              <span className="text-[10px] text-slate-400 mr-1">Rs.</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="any"
+                                value={item.unit_price}
+                                onChange={(e) => handleItemPriceChange(idx, e.target.value)}
+                                className="w-20 px-2 py-1 bg-white border border-slate-300 rounded font-mono font-bold text-slate-900 text-xs text-right focus:outline-hidden focus:border-blue-500"
+                              />
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-2 text-center">
+                            <div className="inline-flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => handleItemQtyChange(idx, -1)}
+                                className="p-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
+                                title={isUrdu ? 'تعداد کم کریں' : 'Decrease Quantity'}
+                              >
+                                <Minus className="w-3.5 h-3.5" />
+                              </button>
+                              <input
+                                type="number"
+                                min="1"
+                                value={item.quantity}
+                                onChange={(e) => handleItemQtyChange(idx, e.target.value)}
+                                className="w-14 px-2 py-1 bg-white border border-slate-300 rounded font-mono font-bold text-slate-900 text-xs text-center focus:outline-hidden focus:border-blue-500"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleItemQtyChange(idx, 1)}
+                                className="p-1 rounded bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
+                                title={isUrdu ? 'تعداد بڑھائیں' : 'Increase Quantity'}
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-2 text-right font-mono font-bold text-slate-900">
+                            Rs. {lineTotal.toLocaleString()}
+                          </td>
+                          <td className="py-2.5 pr-3 text-center">
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveItem(idx)}
+                              className="p-1 rounded text-rose-500 hover:bg-rose-50 hover:text-rose-700 transition-colors cursor-pointer"
+                              title={isUrdu ? 'یہ آئٹم ہٹائیں' : 'Remove Item'}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Calculations & Additional Costs */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs">
+              {/* Left Column: Notes & Delivery */}
+              <div className="space-y-2.5">
+                <div>
+                  <label className="block text-slate-600 font-semibold mb-1">
+                    {isUrdu ? 'بل نوٹس (Notes):' : 'Invoice Notes:'}
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={editNotes}
+                    onChange={(e) => setEditNotes(e.target.value)}
+                    placeholder={isUrdu ? 'بل پر کوئی خاص نوٹ درج کریں...' : 'Add invoice notes...'}
+                    className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 placeholder-slate-400 focus:outline-hidden focus:border-blue-500"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-slate-600 font-semibold mb-1">
+                      {isUrdu ? 'شپنگ / کرایہ:' : 'Shipping Cost:'}
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editShippingCost}
+                      onChange={(e) => setEditShippingCost(e.target.value)}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg font-mono text-xs text-slate-900 focus:outline-hidden focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-600 font-semibold mb-1">
+                      {isUrdu ? 'اضافی چارجز:' : 'Extra Charges:'}
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editExtraCharges}
+                      onChange={(e) => setEditExtraCharges(e.target.value)}
+                      className="w-full px-2.5 py-1.5 bg-white border border-slate-300 rounded-lg font-mono text-xs text-slate-900 focus:outline-hidden focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column: Financial Breakdown */}
+              <div className="space-y-1.5 bg-white p-3 rounded-lg border border-slate-200">
+                <div className="flex justify-between items-center text-slate-600">
+                  <span>{isUrdu ? 'سب ٹوٹل:' : 'Subtotal:'}</span>
+                  <span className="font-mono font-semibold">Rs. {editSubtotal.toLocaleString()}</span>
+                </div>
+
+                {/* Discount Row */}
+                <div className="flex justify-between items-center text-slate-600">
+                  <div className="flex items-center gap-1.5">
+                    <span>{isUrdu ? 'رعایت (Discount):' : 'Discount:'}</span>
+                    <select
+                      value={editDiscountType}
+                      onChange={(e) => setEditDiscountType(e.target.value)}
+                      className="px-1.5 py-0.5 bg-slate-50 border border-slate-300 rounded text-[10px] font-semibold"
+                    >
+                      <option value="amount">Rs.</option>
+                      <option value="percentage">%</option>
+                    </select>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <input
+                      type="number"
+                      min="0"
+                      value={editDiscountValue}
+                      onChange={(e) => setEditDiscountValue(e.target.value)}
+                      className="w-16 px-1.5 py-0.5 bg-white border border-slate-300 rounded text-right font-mono text-xs focus:outline-hidden focus:border-blue-500"
+                    />
+                    <span className="font-mono text-rose-600 font-semibold text-[11px]">
+                      -Rs. {editDiscountAmount.toLocaleString()}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Tax Row */}
+                <div className="flex justify-between items-center text-slate-600">
+                  <div className="flex items-center gap-1">
+                    <span>{isUrdu ? 'ٹیکس (Tax %):' : 'Tax Rate (%):'}</span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editTaxRate}
+                      onChange={(e) => setEditTaxRate(e.target.value)}
+                      className="w-14 px-1.5 py-0.5 bg-white border border-slate-300 rounded text-right font-mono text-xs focus:outline-hidden focus:border-blue-500"
+                    />
+                  </div>
+                  <span className="font-mono text-slate-700 font-semibold">
+                    +Rs. {editTaxAmount.toLocaleString()}
+                  </span>
+                </div>
+
+                {/* Grand Total */}
+                <div className="pt-2 border-t border-slate-200 flex justify-between items-center text-sm font-bold text-slate-900">
+                  <span>{isUrdu ? 'کل رقم (Grand Total):' : 'Grand Total:'}</span>
+                  <span className="font-mono text-base text-emerald-700">Rs. {editGrandTotal.toLocaleString()}</span>
+                </div>
+
+                {/* Paid Amount */}
+                <div className="flex justify-between items-center pt-1.5">
+                  <span className="font-semibold text-slate-700">{isUrdu ? 'وصول شدہ رقم (Paid):' : 'Paid Amount:'}</span>
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-slate-400">Rs.</span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editPaidAmount}
+                      onChange={(e) => setEditPaidAmount(e.target.value)}
+                      className="w-24 px-2 py-1 bg-white border border-slate-300 rounded-lg text-right font-mono font-bold text-slate-900 text-xs focus:outline-hidden focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+
+                {/* Balance Due (Udhar) */}
+                {editBalanceDue > 0 && (
+                  <div className="flex justify-between items-center text-amber-800 bg-amber-50 px-2 py-1 rounded border border-amber-200 font-semibold">
+                    <span>{isUrdu ? 'باقی ادھار (Udhar Khata):' : 'Balance Due (Khata):'}</span>
+                    <span className="font-mono font-bold text-amber-700">Rs. {editBalanceDue.toLocaleString()}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex gap-2 pt-2 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => setEditingInvoice(null)}
+                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-xl text-xs font-semibold cursor-pointer transition-colors"
+              >
+                {isUrdu ? 'منسوخ' : 'Cancel'}
+              </button>
+              <button
+                type="submit"
+                disabled={isSavingEdit || editItems.length === 0}
+                className="flex-2 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-blue-600/20 cursor-pointer transition-all"
+              >
+                <Save className="w-4 h-4" />
+                <span>
+                  {isSavingEdit
+                    ? isUrdu ? 'تبدیلیاں محفوظ ہو رہی ہیں...' : 'Saving Changes...'
+                    : isUrdu ? '✓ تبدیلیاں محفوظ کریں اور اسٹاک اپڈیٹ کریں' : 'Save Changes & Sync Stock'}
+                </span>
+              </button>
+            </div>
+          </form>
+        )}
       </Modal>
     </div>
   );

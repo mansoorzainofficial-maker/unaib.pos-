@@ -143,6 +143,7 @@ export const api = {
       method: 'DELETE'
     }),
     void: (id, data = {}) => request(`/invoices/${id}/void`, { method: 'POST', body: JSON.stringify(data) }),
+    update: (id, data) => request(`/invoices/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     delete: (id) => request(`/invoices/${id}`, { method: 'DELETE' })
   },
 
