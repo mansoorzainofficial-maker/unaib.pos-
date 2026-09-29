@@ -30,6 +30,11 @@ function buildEscPosReceipt(invoice, options = {}) {
     chunks.push(Buffer.from(text + '\n', 'ascii'));
   };
 
+  const paperWidth = options.paperWidth || invoice.store?.receipt_size || '44mm';
+  const isCompactThermal = paperWidth === '44mm' || paperWidth === '50mm' || paperWidth === '58mm';
+  const lineCharLength = isCompactThermal ? (paperWidth === '44mm' ? 30 : 32) : 42;
+  const divider = '-'.repeat(lineCharLength);
+
   // Initialize printer
   chunks.push(ESC_POS.INIT);
 
@@ -44,7 +49,7 @@ function buildEscPosReceipt(invoice, options = {}) {
   writeLine(invoice.store?.store_tagline || 'High-End Components & Accessories');
   writeLine(invoice.store?.store_address || 'Shop #14, Techno City Plaza, Karachi');
   writeLine(`Tel: ${invoice.store?.store_phone || '0300-9258123'}`);
-  writeLine('------------------------------------------');
+  writeLine(divider);
 
   // Prominent Invoice Title
   chunks.push(ESC_POS.BOLD_ON);
@@ -53,7 +58,7 @@ function buildEscPosReceipt(invoice, options = {}) {
   writeLine(`Date: ${new Date(invoice.created_at || Date.now()).toLocaleString()}`);
   writeLine(`Customer: ${invoice.customer_name || 'Walk-in Customer'}`);
   if (invoice.customer_phone) writeLine(`Phone: ${invoice.customer_phone}`);
-  writeLine('------------------------------------------');
+  writeLine(divider);
 
   // Itemized List (Left-aligned)
   chunks.push(ESC_POS.ALIGN_LEFT);
@@ -78,7 +83,7 @@ function buildEscPosReceipt(invoice, options = {}) {
     });
   }
 
-  writeLine('------------------------------------------');
+  writeLine(divider);
 
   // Totals & Calculations
   chunks.push(ESC_POS.ALIGN_RIGHT);
@@ -102,12 +107,14 @@ function buildEscPosReceipt(invoice, options = {}) {
 
   // Footer & Warranty Policy (Centered)
   chunks.push(ESC_POS.ALIGN_CENTER);
-  writeLine('------------------------------------------');
-  writeLine(invoice.store?.receipt_footer || 'Thank you for your purchase!');
-  writeLine('Physical / Burn damage voids warranty.');
-  writeLine('\n\n');
+  writeLine(divider);
+  const footerText = invoice.store?.receipt_footer && invoice.store.receipt_footer.length < 120
+    ? invoice.store.receipt_footer
+    : 'Note: 7 days check warranty. Physical/burn damage voids warranty.';
+  writeLine(footerText);
+  writeLine('*** THANK YOU FOR YOUR BUSINESS ***');
 
-  // Feed paper and cut
+  // Feed paper and cut (compact)
   chunks.push(ESC_POS.FEED_AND_CUT);
 
   return Buffer.concat(chunks);

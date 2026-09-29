@@ -130,11 +130,16 @@ export default function POSScreen({ onLowStockChange }) {
       if (lowRes?.success && onLowStockChange) {
         onLowStockChange(lowRes.count);
       }
-      if (setRes?.success && setRes?.settings?.default_sales_tax_rate) {
-        const defTax = Number(setRes.settings.default_sales_tax_rate);
-        if (!isNaN(defTax)) {
-          setDefaultTaxRate(defTax);
-          setTaxRate(defTax);
+      if (setRes?.success && setRes.settings) {
+        try {
+          localStorage.setItem('unaib_store_settings', JSON.stringify(setRes.settings));
+        } catch (_) {}
+        if (setRes.settings.default_sales_tax_rate) {
+          const defTax = Number(setRes.settings.default_sales_tax_rate);
+          if (!isNaN(defTax)) {
+            setDefaultTaxRate(defTax);
+            setTaxRate(defTax);
+          }
         }
       }
     } catch (err) {
@@ -497,11 +502,17 @@ export default function POSScreen({ onLowStockChange }) {
       // 1. Save bill in IndexedDB pending_bills store
       const savedRecord = await savePendingBill(payload);
 
+      let cachedStore = {};
+      try {
+        cachedStore = JSON.parse(localStorage.getItem('unaib_store_settings') || '{}');
+      } catch (_) {}
+
       // 2. Format invoice matching ThermalReceipt structure for instant offline print
       const offlineInvoice = {
         id: savedRecord.local_id,
         local_id: savedRecord.local_id,
         invoice_number: savedRecord.invoice_number,
+        store: cachedStore,
         customer_id: payload.customer_id,
         customer_name: custName,
         customer_phone: payload.customer_phone,

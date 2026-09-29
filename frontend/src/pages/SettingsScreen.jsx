@@ -18,7 +18,7 @@ export default function SettingsScreen() {
     store_phone: '+92 300 9258123 / 021-32278910',
     store_email: 'sales@unaibcomputers.com',
     currency_symbol: 'Rs.',
-    receipt_size: '80mm',
+    receipt_size: '58mm',
     tax_ntn: '',
     tax_strn: '',
     default_sales_tax_rate: 0,
@@ -271,14 +271,15 @@ export default function SettingsScreen() {
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Default Roll / Page Size</label>
                 <select
-                  value={settings.receipt_size || 'a4'}
+                  value={settings.receipt_size || '58mm'}
                   onChange={(e) => setSettings({ ...settings, receipt_size: e.target.value })}
                   className="w-full px-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-800 focus:outline-hidden focus:border-emerald-500"
                 >
-                  <option value="a4">📄 A4 (Standard Laser & DeskJet Printer) - تجویز کردہ</option>
+                  <option value="44mm">🧾 44mm (الٹرا کومپیکٹ پرچی - 44mm Roll) - تجویز کردہ</option>
+                  <option value="50mm">🧾 50mm / 58mm (چھوٹی تھرمل پرچی - Standard Roll)</option>
+                  <option value="80mm">80mm (بڑی تھرمل پرچی - 80mm Roll)</option>
+                  <option value="a4">📄 A4 (Standard Laser & DeskJet Printer)</option>
                   <option value="a5">📄 A4 Half / A5 (Compact Laser Bill)</option>
-                  <option value="80mm">80mm (Standard POS Thermal Roll)</option>
-                  <option value="58mm">58mm (Compact Mobile/Desk Thermal)</option>
                 </select>
               </div>
 

@@ -106,6 +106,11 @@
 /* ==========================================================
    Print Layouts: Thermal Receipt & A4 Ledger Statement
    ========================================================== */
+@page {
+  margin: 0 !important;
+  size: auto;
+}
+
 @media print {
   /* Hide the rest of the application interface */
   body * {
@@ -122,29 +127,68 @@
     left: 0;
     top: 0;
     width: 100% !important;
-    margin: 0 !important;
-    padding: 2mm !important;
+    margin: 0 auto !important;
+    padding: 0.5mm 1mm !important;
     background: #ffffff !important;
     color: #000000 !important;
     font-family: 'JetBrains Mono', 'Courier New', Courier, monospace !important;
-    font-size: 11px !important;
-    line-height: 1.25 !important;
+    font-size: 8px !important;
+    line-height: 1.15 !important;
     box-shadow: none !important;
     border: none !important;
   }
 
-  /* 58mm specific print sizing */
-  .receipt-58mm {
-    width: 54mm !important;
-    max-width: 54mm !important;
-    font-size: 9.5px !important;
+  /* 44mm Ultra-compact thermal print sizing (Printable width 40-42mm) */
+  .receipt-44mm {
+    width: 42mm !important;
+    max-width: 44mm !important;
+    font-size: 7px !important;
+    line-height: 1.1 !important;
+    padding: 0.2mm 0.5mm !important;
+    margin: 0 auto !important;
+  }
+  .receipt-44mm table {
+    font-size: 7px !important;
+    width: 100% !important;
+  }
+  .receipt-44mm .receipt-barcode svg {
+    max-width: 130px !important;
+    height: 18px !important;
   }
 
-  /* 80mm specific print sizing */
+  /* 50mm / 58mm specific print sizing (46-48mm standard printable roll width for 2-inch mini thermal printers) */
+  .receipt-50mm,
+  .receipt-58mm {
+    width: 48mm !important;
+    max-width: 48mm !important;
+    font-size: 8px !important;
+    line-height: 1.15 !important;
+    padding: 0.5mm 0.5mm !important;
+    margin: 0 auto !important;
+  }
+  .receipt-50mm table,
+  .receipt-58mm table {
+    font-size: 8px !important;
+    width: 100% !important;
+  }
+  .receipt-50mm .receipt-barcode svg,
+  .receipt-58mm .receipt-barcode svg {
+    max-width: 155px !important;
+    height: 20px !important;
+  }
+
+  /* 80mm specific print sizing (72mm standard printable roll width) */
   .receipt-80mm {
-    width: 76mm !important;
-    max-width: 76mm !important;
-    font-size: 11.5px !important;
+    width: 72mm !important;
+    max-width: 72mm !important;
+    font-size: 10px !important;
+    line-height: 1.2 !important;
+    padding: 1mm 1.5mm !important;
+    margin: 0 auto !important;
+  }
+  .receipt-80mm table {
+    font-size: 10px !important;
+    width: 100% !important;
   }
 
   /* A4 Full Page (210mm x 297mm) specific print sizing */
